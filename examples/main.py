@@ -42,3 +42,5 @@ grouped_paragraphs = final_state_dict.get("grouped_paragraphs", "")
 for tag, merged_text in grouped_paragraphs.items():
     print(f"\n--- Tags: {tag} ---")
     print(merged_text)
+
+print(final_state_dict.get("extracted_data", ""))
