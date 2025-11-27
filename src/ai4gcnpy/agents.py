@@ -236,7 +236,7 @@ def extract_contact_information(state: CircularState) -> Dict[str, Any]:
     }
 
 
-def extract_acknowledgements(state: CircularState) -> Dict[str, Any]:
+def retain_original_text(state: CircularState) -> Dict[str, Any]:
     """
     Args:
         state (CircularState): Current graph state containing 'paragraphs' and 'pending_labels'.
@@ -285,7 +285,7 @@ def GCNExtractorAgent():
     workflow.add_node("extract_scientific_content", extract_scientific_content)
     workflow.add_node("extract_references", extract_references)
     workflow.add_node("extract_contact_information", extract_contact_information)
-    workflow.add_node("extract_acknowledgements", extract_acknowledgements)
+    workflow.add_node("retain_original_text", retain_original_text)
 
     # Define the edges/flow between nodes
     workflow.add_edge(START, "text_split")
@@ -300,7 +300,9 @@ def GCNExtractorAgent():
             "ScientificContent": "extract_scientific_content",
             "References": "extract_references",
             "ContactInformation": "extract_contact_information",
-            "Acknowledgements": "extract_acknowledgements",
+            "Acknowledgements": "retain_original_text",
+            "CitationInstructions": "retain_original_text",
+            "Correction": "retain_original_text",
             "end_loop": END
         }
     )
@@ -310,6 +312,6 @@ def GCNExtractorAgent():
     workflow.add_edge("extract_scientific_content", "router_node")
     workflow.add_edge("extract_references", "router_node")
     workflow.add_edge("extract_contact_information", "router_node")
-    workflow.add_edge("extract_acknowledgements", "router_node")
+    workflow.add_edge("retain_original_text", "router_node")
 
     return workflow.compile()

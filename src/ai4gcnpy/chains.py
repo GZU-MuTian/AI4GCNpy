@@ -18,7 +18,9 @@ _ALLOWED_LABEL = Literal[
     "ScientificContent",
     "References",
     "ContactInformation",
-    "Acknowledgements"
+    "Acknowledgements",
+    "CitationInstructions",
+    "Correction"
 ]
 class LabelList(BaseModel):
     labels: List[_ALLOWED_LABEL] = Field(description="A list of allowed labels, one per paragraph in order.")
@@ -31,19 +33,22 @@ You are an expert astronomer analyzing NASA GCN Circulars.
 **Task:** Assign exactly ONE specific topic Label to each of the numbered paragraphs provided below.
 
 **Allowed topics (Choose Only From These):**
-- HeaderInformation
-- AuthorList
-- ScientificContent
-- References
-- ContactInformation
-- Acknowledgements
+- HeaderInformation: Contains circular metadata.
+- AuthorList: Lists author names, possibly followed by affiliations or a "on behalf of..." statement.
+- ScientificContent: Describes observations, analysis, results, or interpretations of an astronomical event.
+- References: Contains links to external astronomical resources.
+- ContactInformation: Provides contact details such as email addresses or phone numbers.
+- Acknowledgements: Expresses gratitude for assistance or contributions.
+- CitationInstructions: Indicates that the message is citable.
+- Correction: Notes about corrections or updates to previously issued information (often starts with "[GCN OP NOTE]" or "This circular was adjusted...").
 
 **Important Instructions:**
 1.  GCNs typically follow this structure:
     - 1st Paragraph: Usually `HeaderInformation` (containing TITLE, NUMBER, SUBJECT, DATE, FROM).
     - 2nd Paragraph: Usually `AuthorList`.
     - Middle Paragraph(s): Primarily `ScientificContent`.
-    - Last Paragraph(s) (if present): May contain `References`, `ContactInformation`, or `Acknowledgements`.
+    - Optional sections like `References`, `ContactInformation`, and `Acknowledgements` usually appear toward the end.
+    - Final paragraphs (if present) may be 'CitationInstructions' or `Correction` information.
 2.  Input Format: Each paragraph is enclosed in paired tags <PN>...</PN>, where N is the paragraph's order (1, 2, 3, ...). This numbering is for your reference to assign the correct tag based on position and content. Do NOT use any numbers found WITHIN the paragraph text to influence your decision.
 3.  Output Format:
 {format_instructions}
