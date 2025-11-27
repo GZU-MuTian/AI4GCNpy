@@ -1,4 +1,4 @@
-from .chains import TopicLabelerChain
+from .chains import TopicLabelerChain, ParseAuthorshipChain
 from .utils import split_text_into_paragraphs, group_paragraphs_by_labels, header_regex_match
 
 from langgraph.graph import StateGraph, START, END
@@ -58,7 +58,7 @@ def text_split(state: CircularState) -> Dict[str, Any]:
 
     try:
         responses = chain.invoke({"numbered_paragraphs": numbered_paragraphs_str})
-        logger.debug("TopicLabelerChain completed")
+        logger.debug(f"TopicLabelerChain completed: {responses.labels}")
     except Exception as e:
         logger.error(f"Failed to label topic: {e}", exc_info=True)
         return {}
@@ -128,12 +128,19 @@ def extract_author_list(state: CircularState) -> Dict[str, Any]:
         raise ValueError("AuthorList paragraph is empty or missing.")
 
     # parse GCN Circular author list
-    extracted_info = {"author_list_sample": "example"}
-    logger.debug("Successfully extracted information: %s", extracted_info)
+    logger.debug("Parsing author list.")
+    chain = ParseAuthorshipChain()
+
+    try:
+        responses = chain.invoke({"content": paragraph})
+        logger.debug(f"ParseAuthorshipChain completed:\n{responses.model_dump()}")
+    except Exception as e:
+        logger.error(f"Failed to parse author list: {e}", exc_info=True)
+        return {}
 
     # Update extracted dataset
     current_extracted = state.extracted_dset
-    updated_extracted = {**current_extracted, **extracted_info}
+    updated_extracted = {**current_extracted, **responses.model_dump()}
 
     # Remove the processed label
     updated_pending = state.pending_labels[1:]

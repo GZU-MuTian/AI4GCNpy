@@ -4,13 +4,14 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import PydanticOutputParser
 
 from pydantic import BaseModel, Field
-from typing import List, Literal
+from typing import List, Literal, Optional
 import logging
 
 logger = logging.getLogger(__name__)
 
 
 # --- TopicLabelerChain ---
+
 _ALLOWED_LABEL = Literal[
     "HeaderInformation",
     "AuthorList",
@@ -67,3 +68,40 @@ def TopicLabelerChain():
     llm = llm_client.getLLM()
     return LABEL_PROMPT | llm | labels_parser
 
+# --- TopicLabelerChain ---
+
+class AuthorEntry(BaseModel):
+    author: str = Field(description="Author name.")
+    affiliation: str = Field(description="Institutional affiliation.")
+
+class Collaboration(BaseModel):
+    collaboration: Optional[str] = Field(default=None, description="Name of the collaboration or team, or null if not mentioned")
+    authors: List[AuthorEntry] = Field(default_factory=list, description="List of authors and their affiliations")
+
+authorship_parser = PydanticOutputParser(pydantic_object=Collaboration)
+
+_SYSTEM_AUTHORSHIP_PROMPT = """
+You are an expert in parsing astronomical and scientific authorship lists. Your task is to extract structured information from the input text.
+
+**Instructions:**
+1. The text contains one or more groups of authors followed by their institutional affiliations in parentheses.
+2. All authors listed before a parenthetical institution belong to that institution.
+3. Additionally, check if the text ends with a phrase like "report on behalf of the [Team Name] team" or similar. If so, record the team name.
+4. Author names may appear as "Initial. Lastname". Preserve spacing and punctuation as given.
+
+{format_instructions}
+"""
+
+_HUMAN_AUTHORSHIP_PROMPT = """
+**Input Text:**
+{content}
+"""
+
+AUTHORSHIP_PROMPT = ChatPromptTemplate.from_messages([
+    ("system", _SYSTEM_AUTHORSHIP_PROMPT),
+    ("human", _HUMAN_AUTHORSHIP_PROMPT)
+]).partial(format_instructions=authorship_parser.get_format_instructions())
+
+def ParseAuthorshipChain():
+    llm = llm_client.getLLM()
+    return AUTHORSHIP_PROMPT | llm | authorship_parser
