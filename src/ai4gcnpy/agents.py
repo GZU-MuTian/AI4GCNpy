@@ -53,8 +53,9 @@ def text_split(state: CircularState) -> Dict[str, Any]:
         return {}
 
     # Prepare input data with clear prefix P<N>
-    numbered_paragraphs_parts = [f"P{i+1}: {p}" for i, p in enumerate(paragraphs)]
+    numbered_paragraphs_parts = [f"<P{i+1}>{p}</P{i+1}>" for i, p in enumerate(paragraphs)]
     numbered_paragraphs_str = "\n".join(numbered_paragraphs_parts)
+    logger.debug(numbered_paragraphs_str)
 
     # Label using LLM
     logger.debug("Labeling paragraphs with topics.")
