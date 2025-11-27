@@ -7,7 +7,7 @@ from langchain_core.prompts import PromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from functools import partial
 
-from typing import List, Dict, Any, Literal
+from typing import List, Dict, Any, Literal, Optional
 from pydantic import BaseModel, Field
 import json
 import logging
@@ -25,6 +25,7 @@ class CircularState(BaseModel):
     )
     pending_labels: List[str] = Field(default_factory=list, description="Keys left to process.")
     extracted_dset: Dict[str, Any] = Field(default_factory=dict, description="Dict storing extracted circular information.")
+    current_label: Optional[str] = Field(default=None, description="The label currently being processed.")
 
 # --- Node Functions ---
 
@@ -66,7 +67,7 @@ def text_split(state: CircularState) -> Dict[str, Any]:
 
     return {"paragraphs": labeled_paragraphs, "pending_labels": labeled_paragraphs.keys()}
 
-def router_node(state: CircularState)  -> str:
+def router_node(state: CircularState)  -> Dict[str, Any]:
     """
     Routing function that determines the next node to execute based on the current 'pending_labels' list.
     
@@ -77,9 +78,9 @@ def router_node(state: CircularState)  -> str:
     if not pending_labels:
         logger.debug("Router: No pending labels — exiting loop.")
         return "end_loop"
-    next = pending_labels[0]
-    logger.debug(f"Router: Selected next node '{next}'")
-    return next
+    current_label = pending_labels[0]
+    logger.debug(f"Router: Selected next node '{current_label}'")
+    return {"current_label": current_label}
 
 # --- Extractor Nodes ---
 
@@ -285,7 +286,7 @@ def GCNExtractorAgent():
     # Router -> Extractor Nodes (Conditional)
     workflow.add_conditional_edges(
         "router_node",
-        lambda x: x,
+        lambda state: state.current_label,
         {
             "HeaderInformation": "extract_header_information",
             "AuthorList": "extract_author_list",
