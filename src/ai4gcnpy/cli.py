@@ -107,5 +107,7 @@ def Extractor(
     final_state = app.invoke(initial_state)
 
     # # Output results
-    console.print(Rule("Extraction Result", style="dim"))
-    console.print(final_state)
+    console.print(Rule("Circular", style="dim"))
+    console.print(final_state["raw_text"])
+    console.print(Rule("Extracted Results", style="dim"))
+    console.print(final_state["extracted_dset"])

@@ -77,7 +77,7 @@ def router_node(state: CircularState)  -> Dict[str, Any]:
     pending_labels = state.pending_labels
     if not pending_labels:
         logger.debug("Router: No pending labels — exiting loop.")
-        return "end_loop"
+        return {"current_label": "end_loop"} 
     current_label = pending_labels[0]
     logger.debug(f"Router: Selected next node '{current_label}'")
     return {"current_label": current_label}
@@ -100,14 +100,14 @@ def extract_header_information(state: CircularState) -> Dict[str, Any]:
 
     # parse GCN Circular header
     extracted_info = header_regex_match(paragraph)
-    logger.debug("Successfully extracted information: %s", extracted_info.model_dump())
+    logger.debug("Successfully extracted information: %s", extracted_info)
 
     # Update extracted dataset
     current_extracted = state.extracted_dset
-    updated_extracted = {**current_extracted, **extracted_info.model_dump()}
+    updated_extracted = {**current_extracted, **extracted_info}
 
     # Remove the processed label
-    updated_pending = state["pending_labels"][1:]
+    updated_pending = state.pending_labels[1:]
     return {
         "extracted_dset": updated_extracted,
         "pending_labels": updated_pending
@@ -129,14 +129,14 @@ def extract_author_list(state: CircularState) -> Dict[str, Any]:
 
     # parse GCN Circular author list
     extracted_info = {"author_list_sample": "example"}
-    logger.debug("Successfully extracted information: %s", extracted_info.model_dump())
+    logger.debug("Successfully extracted information: %s", extracted_info)
 
     # Update extracted dataset
     current_extracted = state.extracted_dset
-    updated_extracted = {**current_extracted, **extracted_info.model_dump()}
+    updated_extracted = {**current_extracted, **extracted_info}
 
     # Remove the processed label
-    updated_pending = state["pending_labels"][1:]
+    updated_pending = state.pending_labels[1:]
     return {
         "extracted_dset": updated_extracted,
         "pending_labels": updated_pending
@@ -159,14 +159,14 @@ def extract_scientific_content(state: CircularState) -> Dict[str, Any]:
 
     # --- Placeholder Extraction Logic ---
     extracted_info = {"scientific_content_sample": "example"}
-    logger.debug("Successfully extracted information: %s", extracted_info.model_dump())
+    logger.debug("Successfully extracted information: %s", extracted_info)
 
     # Update extracted dataset
     current_extracted = state.extracted_dset
-    updated_extracted = {**current_extracted, **extracted_info.model_dump()}
+    updated_extracted = {**current_extracted, **extracted_info}
 
     # Remove the processed label
-    updated_pending = state["pending_labels"][1:]
+    updated_pending = state.pending_labels[1:]
     return {
         "extracted_dset": updated_extracted,
         "pending_labels": updated_pending
@@ -187,14 +187,14 @@ def extract_references(state: CircularState) -> Dict[str, Any]:
 
     # --- Placeholder Extraction Logic ---
     extracted_info = {"references_sample": "example"}
-    logger.debug("Successfully extracted information: %s", extracted_info.model_dump())
+    logger.debug("Successfully extracted information: %s", extracted_info)
 
     # Update extracted dataset
     current_extracted = state.extracted_dset
-    updated_extracted = {**current_extracted, **extracted_info.model_dump()}
+    updated_extracted = {**current_extracted, **extracted_info}
 
     # Remove the processed label
-    updated_pending = state["pending_labels"][1:]
+    updated_pending = state.pending_labels[1:]
     return {
         "extracted_dset": updated_extracted,
         "pending_labels": updated_pending
@@ -215,14 +215,14 @@ def extract_contact_information(state: CircularState) -> Dict[str, Any]:
 
     # --- Placeholder Extraction Logic ---
     extracted_info = {"contact_information_sample": "example"}
-    logger.debug("Successfully extracted information: %s", extracted_info.model_dump())
+    logger.debug("Successfully extracted information: %s", extracted_info)
 
     # Update extracted dataset
     current_extracted = state.extracted_dset
-    updated_extracted = {**current_extracted, **extracted_info.model_dump()}
+    updated_extracted = {**current_extracted, **extracted_info}
 
     # Remove the processed label
-    updated_pending = state["pending_labels"][1:]
+    updated_pending = state.pending_labels[1:]
     return {
         "extracted_dset": updated_extracted,
         "pending_labels": updated_pending
@@ -243,14 +243,14 @@ def extract_acknowledgements(state: CircularState) -> Dict[str, Any]:
 
     # --- Placeholder Extraction Logic ---
     extracted_info = {"acknowledgements_sample": "example"}
-    logger.debug("Successfully extracted information: %s", extracted_info.model_dump())
+    logger.debug("Successfully extracted information: %s", extracted_info)
 
     # Update extracted dataset
     current_extracted = state.extracted_dset
-    updated_extracted = {**current_extracted, **extracted_info.model_dump()}
-
+    updated_extracted = {**current_extracted, **extracted_info}
+    
     # Remove the processed label
-    updated_pending = state["pending_labels"][1:]
+    updated_pending = state.pending_labels[1:]
     return {
         "extracted_dset": updated_extracted,
         "pending_labels": updated_pending
@@ -294,7 +294,7 @@ def GCNExtractorAgent():
             "References": "extract_references",
             "ContactInformation": "extract_contact_information",
             "Acknowledgements": "extract_acknowledgements",
-            "end_loop": END # Map the END constant returned by router
+            "end_loop": END
         }
     )
     # Extractor Nodes -> Router (Loop back)

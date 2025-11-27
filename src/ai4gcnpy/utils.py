@@ -1,5 +1,4 @@
 import re
-from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
 import logging
 
@@ -49,17 +48,7 @@ def group_paragraphs_by_labels(
     return grouped
 
 
-class CircularHeader(BaseModel):
-    """
-    GCN Circular header metadata.
-    """
-    circularId: str
-    subject: str
-    createdOn: str
-    submitter: str
-    email: str = ""
-
-def header_regex_match(header: str) -> CircularHeader:
+def header_regex_match(header: str) -> Dict[str, Any]:
     """
     Parses the header of a GCN circular using regex and returns a validated Pydantic model instance.
 
@@ -67,7 +56,7 @@ def header_regex_match(header: str) -> CircularHeader:
         header (str): The raw header text of the GCN circular.
 
     Returns:
-        CircularHeader: A validated model containing parsed metadata.
+        Dict[str, Any]: A validated dict containing parsed metadata.
     """
     # Define expected header structure with regex (VERBOSE for readability)
     pattern = re.compile(r"""
@@ -94,10 +83,10 @@ def header_regex_match(header: str) -> CircularHeader:
     else:
         submitter = from_field
 
-    return CircularHeader(
-        circularId=number.strip(),
-        subject=subject.strip(),
-        createdOn=date.strip(),
-        submitter=submitter.strip(),
-        email=email
-    )
+    return {
+        "circularId": number.strip(),
+        "subject": subject.strip(),
+        "createdOn": date.strip(),
+        "submitter": submitter.strip(),
+        "email": email
+    }
