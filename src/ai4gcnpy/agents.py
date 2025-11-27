@@ -1,4 +1,5 @@
-from .prompts import DEFAULT_TAGGING_PROMPT_TEMPLATE
+from .chains import TopicLabelerChain
+from .utils import split_text_into_paragraphs, group_paragraphs_by_labels
 
 from langgraph.graph import StateGraph, START, END
 from langchain_core.runnables import Runnable
@@ -11,128 +12,74 @@ from pydantic import BaseModel, Field
 import json
 import logging
 
+logger = logging.getLogger(__name__)
+
 
 # --- State Definition ---
 
-class GCNState(BaseModel):
-    """Represents the state of the GCN tagging workflow."""
+class CircularState(BaseModel):
     raw_text: str = Field(..., description="Original GCN circular text.")
-    paragraphs: List[str] = Field(
-        default_factory=list,
-        description="List of input GCN text paragraphs."
-    )
-    tags: List[str] = Field(
-        default_factory=list,
-        description="Corresponding topic tags for each paragraph."
-    )
-    grouped_paragraphs: Dict[str, str] = Field(
+    paragraphs: Dict[str, Any] = Field(
         default_factory=dict,
-        description="Grouped paragraphs by category tags."
+        description="Paragraphs assigned topic label"
     )
-    remaining_tags: List[str] = Field(
-        default_factory=list,
-        description="List of tags yet to be processed by extractors."
-    )
-    extracted_data: Dict[str, Any] = Field(
-        default_factory=dict, 
-        description="Dict storing extracted physical information."
-    )
+    # remaining_tags: List[str] = Field(
+    #     default_factory=list,
+    #     description="List of tags yet to be processed by extractors."
+    # )
+    # extracted_data: Dict[str, Any] = Field(
+    #     default_factory=dict, 
+    #     description="Dict storing extracted physical information."
+    # )
 
 # --- Node Functions ---
 
-def text_split(state: GCNState) -> Dict[str, Any]:
+def text_split(state: CircularState) -> Dict[str, Any]:
     """
-    Loads the GCN text and splits it into paragraphs.
+    Assign topic labels to paragraphs using an LLM.
     
     Args:
-        state (GCNState): The current state containing raw_text.
+        state (CircularState): The current state containing raw_text.
         
     Returns:
         Dict[str, Any]: Updates the state with the 'paragraphs' key.
     """
-    logging.info("Splitting GCN text into paragraphs.")
     raw_text = state.raw_text
-    # Simple split by double newline.
-    paragraphs = [p.strip() for p in raw_text.split("\n\n") if p.strip()]
-    logging.debug(f"Split into {len(paragraphs)} paragraphs.")
-    return {"paragraphs": paragraphs}
-
-def label_paragraphs(
-        state: GCNState, 
-        llm: Runnable, 
-        PROMPT_TEMPLATE: str = DEFAULT_TAGGING_PROMPT_TEMPLATE
-    ) -> Dict[str, Any]:
-    """
-    Assigns a topic label to each paragraph using an LLM.
     
-    Args:
-        state (GCNState): The current state containing 'paragraphs'.
-        llm (Runnable): An LLM to use for tagging.
-        PROMPT_TEMPLATE (str): An optional custom prompt template string. If empty, the default is used.
-        
-    Returns:
-        Dict[str, Any]: Updates the state with the 'tags' key.
-    """
-    logging.info("Labeling paragraphs with topics.")
-    paragraphs = state.paragraphs
-
-    prompt = PromptTemplate(
-        template=PROMPT_TEMPLATE
-    )
-    tagging_chain = prompt | llm | StrOutputParser()    
+    # Split
+    paragraphs = split_text_into_paragraphs(raw_text)
+    if not paragraphs:
+        logger.warning("No paragraphs found in input text.")
+        return {}
 
     # Prepare input data with clear prefix P<N>
     numbered_paragraphs_parts = [f"P{i+1}: {p}" for i, p in enumerate(paragraphs)]
     numbered_paragraphs_str = "\n".join(numbered_paragraphs_parts)
 
-    # LLM Integration Placeholder
-    logging.debug("Invoking LLM for batch tagging...")
-    response = tagging_chain.invoke({"numbered_paragraphs": numbered_paragraphs_str})
-    logging.debug(f"tagging_chain Response:\n{response}")
+    # Label using LLM
+    logger.debug("Labeling paragraphs with topics.")
+    chain = TopicLabelerChain()
+
     try:
-        tags = json.loads(response)
+        responses = chain.invoke({"numbered_paragraphs": numbered_paragraphs_str})
+        logger.debug("TopicLabelerChain completed")
     except Exception as e:
-        logging.error(f"Error during LLM tagging process: {e}", exc_info=True)
-        tags = []
-    
-    return {"tags": tags}
+        logger.error(f"Failed to label topic: {e}", exc_info=True)
+        return {}
 
-def group_paragraphs(state: GCNState) -> Dict[str, Any]:
-    """
-    Groups paragraphs based on their assigned labels.
-    
-    Args:
-        state (GCNState): The current state containing 'paragraphs' and 'tags'.
-        
-    Returns:
-        Dict[str, Any]: Updates the state with the 'grouped_paragraphs' key.
-    """
-    logging.info("Grouping paragraphs by topic labels.")
-    paragraphs = state.paragraphs
-    tags = state.tags
-    grouped = {}
+    labeled_paragraphs = group_paragraphs_by_labels(paragraphs, responses.labels)
 
-    if len(paragraphs) != len(tags):
-        logging.error("Mismatch between number of paragraphs and tags. Cannot group.")
+    return {"paragraphs": labeled_paragraphs}
 
-    for paragraph, tag in zip(paragraphs, tags):
-        if tag in grouped:
-            grouped[tag] += "\n\n" + paragraph
-        else:
-            grouped[tag] = paragraph
-
-    remaining_tags = list(grouped.keys())
-    logging.info(f"Paragraphs grouped into tags:\n{remaining_tags}")
-    return {"grouped_paragraphs": grouped, "remaining_tags": remaining_tags}
 
 # --- Extractor Nodes ---
 
-def extract_header_information(state: GCNState) -> Dict[str, Any]:
+def extract_header_information(state: CircularState) -> Dict[str, Any]:
     """
     Simulates extraction of header information from the current paragraph.
 
     Args:
-        state (GCNState): The current state containing 'grouped_paragraphs'.
+        state (CircularState): The current state containing 'grouped_paragraphs'.
         
     Returns:
         Dict[str, Any]: Updates the state with the 'extracted_data' key.
@@ -154,12 +101,12 @@ def extract_header_information(state: GCNState) -> Dict[str, Any]:
         "remaining_tags": new_remaining
     }
 
-def extract_author_list(state: GCNState) -> Dict[str, Any]:
+def extract_author_list(state: CircularState) -> Dict[str, Any]:
     """
     Simulates extraction of author list information.
 
     Args:
-        state (GCNState): The current state containing 'grouped_paragraphs'.
+        state (CircularState): The current state containing 'grouped_paragraphs'.
         
     Returns:
         Dict[str, Any]: Updates the state with the 'extracted_data' key.
@@ -181,12 +128,12 @@ def extract_author_list(state: GCNState) -> Dict[str, Any]:
         "remaining_tags": new_remaining
     }
 
-def extract_scientific_content(state: GCNState) -> Dict[str, Any]:
+def extract_scientific_content(state: CircularState) -> Dict[str, Any]:
     """
     Simulates extraction of scientific content details.
 
     Args:
-        state (GCNState): The current state containing 'grouped_paragraphs'.
+        state (CircularState): The current state containing 'grouped_paragraphs'.
         
     Returns:
         Dict[str, Any]: Updates the state with the 'extracted_data' key.
@@ -208,10 +155,10 @@ def extract_scientific_content(state: GCNState) -> Dict[str, Any]:
         "remaining_tags": new_remaining
     }
 
-def extract_references(state: GCNState) -> Dict[str, Any]:
+def extract_references(state: CircularState) -> Dict[str, Any]:
     """
     Args:
-        state (GCNState): The current state containing 'grouped_paragraphs'.
+        state (CircularState): The current state containing 'grouped_paragraphs'.
         
     Returns:
         Dict[str, Any]: Updates the state with the 'extracted_data' key.
@@ -233,10 +180,10 @@ def extract_references(state: GCNState) -> Dict[str, Any]:
         "remaining_tags": new_remaining
     }
 
-def extract_contact_information(state: GCNState) -> Dict[str, Any]:
+def extract_contact_information(state: CircularState) -> Dict[str, Any]:
     """
     Args:
-        state (GCNState): The current state containing 'grouped_paragraphs'.
+        state (CircularState): The current state containing 'grouped_paragraphs'.
         
     Returns:
         Dict[str, Any]: Updates the state with the 'extracted_data' key.
@@ -258,10 +205,10 @@ def extract_contact_information(state: GCNState) -> Dict[str, Any]:
         "remaining_tags": new_remaining
     }
 
-def extract_acknowledgements(state: GCNState) -> Dict[str, Any]:
+def extract_acknowledgements(state: CircularState) -> Dict[str, Any]:
     """
     Args:
-        state (GCNState): The current state containing 'grouped_paragraphs'.
+        state (CircularState): The current state containing 'grouped_paragraphs'.
         
     Returns:
         Dict[str, Any]: Updates the state with the 'extracted_data' key.
@@ -283,16 +230,16 @@ def extract_acknowledgements(state: GCNState) -> Dict[str, Any]:
         "remaining_tags": new_remaining
     }
 
-def router_node(state: GCNState) -> Dict[str, Any]:
+def router_node(state: CircularState) -> Dict[str, Any]:
     # Returning an empty dict signifies no direct state change by this node function.
     return {}
 
-def route_to_extractor(state: GCNState) -> str:
+def route_to_extractor(state: CircularState) -> str:
     """
     Routes to the appropriate extractor based on the next tag in remaining_tags.    
     
     Args:
-        state (GCNState): The current workflow state.
+        state (CircularState): The current workflow state.
         
     Returns:
        str: Name of next node (e.g., 'extract_header_information') or 'end'.
@@ -306,27 +253,19 @@ def route_to_extractor(state: GCNState) -> str:
 
 # --- Graph Construction ---
 
-def GCNParserGraph(llm: Runnable):
+def GCNExtractorAgent():
     """
-    Creates and compiles the LangGraph workflow for GCN processing.
-
-    Args:
-        llm (Runnable): An LLM to use for tagging.
+    Agent that processes a GCN Circular text and returns structured data.
 
     Returns:
         StateGraph: The compiled workflow graph.
     """
-    logging.info("Creating LangGraph workflow.")
+    logging.debug("Creating LangGraph workflow.")
     # Initialize the state graph 
-    workflow = StateGraph(GCNState)
+    workflow = StateGraph(CircularState)
 
     # Add nodes
     workflow.add_node("text_split", text_split)
-    workflow.add_node(
-        "label_paragraphs", 
-        partial(label_paragraphs, llm=llm, PROMPT_TEMPLATE=DEFAULT_TAGGING_PROMPT_TEMPLATE)
-    )
-    workflow.add_node("group_paragraphs", group_paragraphs)
     workflow.add_node("router_node", router_node)
     workflow.add_node("extract_header_information", extract_header_information)
     workflow.add_node("extract_author_list", extract_author_list)
@@ -337,9 +276,7 @@ def GCNParserGraph(llm: Runnable):
 
     # Define the edges/flow between nodes
     workflow.add_edge(START, "text_split")
-    workflow.add_edge("text_split", "label_paragraphs")
-    workflow.add_edge("label_paragraphs", "group_paragraphs")
-    workflow.add_edge("group_paragraphs", "router_node")
+    # workflow.add_edge("group_paragraphs", "router_node")
 
     # Router -> Extractor Nodes (Conditional)
     workflow.add_conditional_edges(
@@ -364,4 +301,4 @@ def GCNParserGraph(llm: Runnable):
     workflow.add_edge("extract_contact_information", "router_node")
     workflow.add_edge("extract_acknowledgements", "router_node")
 
-    return workflow
+    return workflow.compile()

@@ -2,6 +2,9 @@ from langchain.chat_models import init_chat_model
 from langchain_core.language_models import BaseChatModel
 from pydantic import BaseModel, Field, ValidationError
 from typing import Optional
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class LLMConfig(BaseModel):
@@ -43,6 +46,7 @@ def basicConfig(**kwargs) -> None:
     global _GLOBAL_LLM_CONFIG
     try:
         _GLOBAL_LLM_CONFIG = LLMConfig(**kwargs)
+        logger.debug("Initializing LLM with config: %s", _GLOBAL_LLM_CONFIG.model_dump())
     except ValidationError as e:
         raise ValueError(f"Invalid LLM configuration: {e}") from e
 
