@@ -244,7 +244,7 @@ def retain_original_text(state: CircularState) -> Dict[str, Any]:
     Returns:
         Dict[str, Any]: Updates the state with the 'extracted_dset' key.
     """ 
-    paragraph = state.paragraphs.get("Acknowledgements", "")
+    paragraph = state.paragraphs.get(state.current_label, "")
     if not paragraph.strip():
         raise ValueError("Acknowledgements paragraph is empty or missing.")
 
