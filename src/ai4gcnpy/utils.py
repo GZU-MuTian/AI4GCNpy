@@ -1,3 +1,4 @@
+import re
 from typing import List, Dict, Any, Optional
 import logging
 
@@ -45,3 +46,54 @@ def group_paragraphs_by_labels(
 
     logger.debug(f"Grouped paragraphs into {len(grouped)} topics: {list(grouped.keys())}")
     return grouped
+
+
+def header_regex_match(header: str) -> dict:
+    """
+    Parses the header of a GCN circular
+
+    Args:
+        header (str): The header of the GCN circular
+    
+    Returns:
+        dict: A dictionary containing the parsed header information
+    """
+    # metadata structure
+    metadata = {
+        "circularId": '',
+        "subject": '',
+        "createdOn": '',
+        "submitter": '',
+        "email": '',
+    }
+
+    # Regular expression pattern to match the header
+    pattern = re.compile(r"""
+        TITLE:\s*(.*?)\s*
+        NUMBER:\s*(.*?)\s*
+        SUBJECT:\s*(.*?)\s*
+        DATE:\s*(.*?)\s*
+        FROM:\s*(.*?)(?:\s*\n|$)
+    """, re.VERBOSE)
+    match = pattern.search(header)
+
+    # match check
+    if not match or match.group(1) != 'GCN CIRCULAR':
+        logging.debug(f"Failed to parse document:\n{header}")
+        return metadata
+
+    # metadata structure
+    metadata.update({
+        "circularId": match.group(2),
+        "subject": match.group(3),
+        "createdOn": match.group(4),
+        "submitter": match.group(5),
+    })
+
+    email_match = re.search(r'<([^>]+)>', match.group(5))
+    if email_match:
+        metadata.update({"email": email_match.group(1)})
+    else:
+        logging.debug(f"Failed to parse email from submitter: {match.group(5)}")
+
+    return metadata

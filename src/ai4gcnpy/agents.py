@@ -21,16 +21,10 @@ class CircularState(BaseModel):
     raw_text: str = Field(..., description="Original GCN circular text.")
     paragraphs: Dict[str, Any] = Field(
         default_factory=dict,
-        description="Paragraphs assigned topic label"
+        description="Paragraphs assigned topic label."
     )
-    # remaining_tags: List[str] = Field(
-    #     default_factory=list,
-    #     description="List of tags yet to be processed by extractors."
-    # )
-    # extracted_data: Dict[str, Any] = Field(
-    #     default_factory=dict, 
-    #     description="Dict storing extracted physical information."
-    # )
+    pending_labels: List[str] = Field(default_factory=list, description="Keys left to process.")
+    extracted_dset: Dict[str, Any] = Field(default_factory=dict, description="Dict storing extracted circular information.")
 
 # --- Node Functions ---
 
@@ -70,24 +64,37 @@ def text_split(state: CircularState) -> Dict[str, Any]:
 
     labeled_paragraphs = group_paragraphs_by_labels(paragraphs, responses.labels)
 
-    return {"paragraphs": labeled_paragraphs}
+    return {"paragraphs": labeled_paragraphs, "pending_labels": labeled_paragraphs.keys()}
 
+def router_node(state: CircularState)  -> str:
+    """
+    Routing function that determines the next node to execute based on the current 'pending_labels' list.
+    
+    - If the 'pending_labels' list is empty, the workflow should end, so return 'end'.
+    - Otherwise, return the first task in the 'pending_labels' list, which must match the name of a registered node.
+    """
+    if not state["pending_labels"]:
+        logger.debug("Router: No pending labels — exiting loop.")
+        return "end_loop"
+    next = state["pending_labels"][0]
+    logger.debug(f"Router: Selected next node '{next}'")
+    return next
 
 # --- Extractor Nodes ---
 
 def extract_header_information(state: CircularState) -> Dict[str, Any]:
     """
-    Simulates extraction of header information from the current paragraph.
+    Extraction of header information from the current paragraph.
 
     Args:
-        state (CircularState): The current state containing 'grouped_paragraphs'.
+        state (CircularState): The current state containing 'paragraphs'.
         
     Returns:
-        Dict[str, Any]: Updates the state with the 'extracted_data' key.
+        Dict[str, Any]: Updates the state with the 'extracted_dset' key.
     """
-    logging.info("Extractor 'Header Information' activated.")
-    current_tag = state.remaining_tags[0]
-    paragraph = state.grouped_paragraphs.get(current_tag, "")
+    logging.debug("Extractor 'Header Information' activated.")
+    current_label = state.pending_labels[0]
+    paragraph = state.paragraphs.get(current_label, "")
 
     # --- Placeholder Extraction Logic ---
     extracted_info = {"header_sample": "example"}
@@ -96,10 +103,10 @@ def extract_header_information(state: CircularState) -> Dict[str, Any]:
     updated_extracted = state.extracted_data.copy()
     updated_extracted.update(extracted_info)
     # Remove the processed tag
-    new_remaining = state.remaining_tags[1:]
+    updated_pending = state["pending_labels"][1:]
     return {
-        "extracted_data": updated_extracted,
-        "remaining_tags": new_remaining
+        "extracted_dset": updated_extracted,
+        "pending_labels": updated_pending
     }
 
 def extract_author_list(state: CircularState) -> Dict[str, Any]:
@@ -107,7 +114,7 @@ def extract_author_list(state: CircularState) -> Dict[str, Any]:
     Simulates extraction of author list information.
 
     Args:
-        state (CircularState): The current state containing 'grouped_paragraphs'.
+        state (CircularState): The current state containing 'paragraphs'.
         
     Returns:
         Dict[str, Any]: Updates the state with the 'extracted_data' key.
@@ -231,26 +238,6 @@ def extract_acknowledgements(state: CircularState) -> Dict[str, Any]:
         "remaining_tags": new_remaining
     }
 
-def router_node(state: CircularState) -> Dict[str, Any]:
-    # Returning an empty dict signifies no direct state change by this node function.
-    return {}
-
-def route_to_extractor(state: CircularState) -> str:
-    """
-    Routes to the appropriate extractor based on the next tag in remaining_tags.    
-    
-    Args:
-        state (CircularState): The current workflow state.
-        
-    Returns:
-       str: Name of next node (e.g., 'extract_header_information') or 'end'.
-    """
-    if not state.remaining_tags:
-        logging.info("No more tags to process. Ending workflow.")
-        return "end"
-    
-    next_tag = state.remaining_tags[0]
-    return next_tag
 
 # --- Graph Construction ---
 
@@ -277,12 +264,11 @@ def GCNExtractorAgent():
 
     # Define the edges/flow between nodes
     workflow.add_edge(START, "text_split")
-    # workflow.add_edge("group_paragraphs", "router_node")
-
+    workflow.add_edge("text_split", "router_node")
     # Router -> Extractor Nodes (Conditional)
     workflow.add_conditional_edges(
         "router_node",
-        route_to_extractor, # The function that decides
+        lambda x: x,
         {
             "HeaderInformation": "extract_header_information",
             "AuthorList": "extract_author_list",
@@ -290,11 +276,10 @@ def GCNExtractorAgent():
             "References": "extract_references",
             "ContactInformation": "extract_contact_information",
             "Acknowledgements": "extract_acknowledgements",
-            "end": END # Map the END constant returned by router
+            "end_loop": END # Map the END constant returned by router
         }
     )
     # Extractor Nodes -> Router (Loop back)
-    # After any extraction, go back to the router to check the next key
     workflow.add_edge("extract_header_information", "router_node")
     workflow.add_edge("extract_author_list", "router_node")
     workflow.add_edge("extract_scientific_content", "router_node")
