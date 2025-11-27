@@ -73,10 +73,11 @@ def router_node(state: CircularState)  -> str:
     - If the 'pending_labels' list is empty, the workflow should end, so return 'end'.
     - Otherwise, return the first task in the 'pending_labels' list, which must match the name of a registered node.
     """
-    if not state["pending_labels"]:
+    pending_labels = state.pending_labels
+    if not pending_labels:
         logger.debug("Router: No pending labels — exiting loop.")
         return "end_loop"
-    next = state["pending_labels"][0]
+    next = pending_labels[0]
     logger.debug(f"Router: Selected next node '{next}'")
     return next
 
@@ -101,7 +102,7 @@ def extract_header_information(state: CircularState) -> Dict[str, Any]:
     logger.debug("Successfully extracted information: %s", extracted_info.model_dump())
 
     # Update extracted dataset
-    current_extracted = state.get("extracted_dset", {})
+    current_extracted = state.extracted_dset
     updated_extracted = {**current_extracted, **extracted_info.model_dump()}
 
     # Remove the processed label
@@ -130,7 +131,7 @@ def extract_author_list(state: CircularState) -> Dict[str, Any]:
     logger.debug("Successfully extracted information: %s", extracted_info.model_dump())
 
     # Update extracted dataset
-    current_extracted = state.get("extracted_dset", {})
+    current_extracted = state.extracted_dset
     updated_extracted = {**current_extracted, **extracted_info.model_dump()}
 
     # Remove the processed label
@@ -160,7 +161,7 @@ def extract_scientific_content(state: CircularState) -> Dict[str, Any]:
     logger.debug("Successfully extracted information: %s", extracted_info.model_dump())
 
     # Update extracted dataset
-    current_extracted = state.get("extracted_dset", {})
+    current_extracted = state.extracted_dset
     updated_extracted = {**current_extracted, **extracted_info.model_dump()}
 
     # Remove the processed label
@@ -188,7 +189,7 @@ def extract_references(state: CircularState) -> Dict[str, Any]:
     logger.debug("Successfully extracted information: %s", extracted_info.model_dump())
 
     # Update extracted dataset
-    current_extracted = state.get("extracted_dset", {})
+    current_extracted = state.extracted_dset
     updated_extracted = {**current_extracted, **extracted_info.model_dump()}
 
     # Remove the processed label
@@ -216,7 +217,7 @@ def extract_contact_information(state: CircularState) -> Dict[str, Any]:
     logger.debug("Successfully extracted information: %s", extracted_info.model_dump())
 
     # Update extracted dataset
-    current_extracted = state.get("extracted_dset", {})
+    current_extracted = state.extracted_dset
     updated_extracted = {**current_extracted, **extracted_info.model_dump()}
 
     # Remove the processed label
@@ -244,7 +245,7 @@ def extract_acknowledgements(state: CircularState) -> Dict[str, Any]:
     logger.debug("Successfully extracted information: %s", extracted_info.model_dump())
 
     # Update extracted dataset
-    current_extracted = state.get("extracted_dset", {})
+    current_extracted = state.extracted_dset
     updated_extracted = {**current_extracted, **extracted_info.model_dump()}
 
     # Remove the processed label
