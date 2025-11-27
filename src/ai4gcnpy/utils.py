@@ -1,4 +1,5 @@
 import re
+from pydantic import BaseModel, Field
 from typing import List, Dict, Any, Optional
 import logging
 
@@ -48,26 +49,27 @@ def group_paragraphs_by_labels(
     return grouped
 
 
-def header_regex_match(header: str) -> dict:
+class CircularHeader(BaseModel):
     """
-    Parses the header of a GCN circular
+    GCN Circular header metadata.
+    """
+    circularId: str
+    subject: str
+    createdOn: str
+    submitter: str
+    email: str = ""
+
+def header_regex_match(header: str) -> CircularHeader:
+    """
+    Parses the header of a GCN circular using regex and returns a validated Pydantic model instance.
 
     Args:
-        header (str): The header of the GCN circular
-    
-    Returns:
-        dict: A dictionary containing the parsed header information
-    """
-    # metadata structure
-    metadata = {
-        "circularId": '',
-        "subject": '',
-        "createdOn": '',
-        "submitter": '',
-        "email": '',
-    }
+        header (str): The raw header text of the GCN circular.
 
-    # Regular expression pattern to match the header
+    Returns:
+        CircularHeader: A validated model containing parsed metadata.
+    """
+    # Define expected header structure with regex (VERBOSE for readability)
     pattern = re.compile(r"""
         TITLE:\s*(.*?)\s*
         NUMBER:\s*(.*?)\s*
@@ -75,25 +77,27 @@ def header_regex_match(header: str) -> dict:
         DATE:\s*(.*?)\s*
         FROM:\s*(.*?)(?:\s*\n|$)
     """, re.VERBOSE)
-    match = pattern.search(header)
 
     # match check
-    if not match or match.group(1) != 'GCN CIRCULAR':
-        logging.debug(f"Failed to parse document:\n{header}")
-        return metadata
+    match = pattern.search(header)
+    if not match:
+        raise ValueError("Header does not match expected GCN Circular format.")
 
-    # metadata structure
-    metadata.update({
-        "circularId": match.group(2),
-        "subject": match.group(3),
-        "createdOn": match.group(4),
-        "submitter": match.group(5),
-    })
+    title, number, subject, date, from_field = match.groups()
 
-    email_match = re.search(r'<([^>]+)>', match.group(5))
+    # Try to extract email
+    email = ""
+    email_match  = re.fullmatch(r'\s*(.*?)\s*<([^>]+)>\s*', from_field)
     if email_match:
-        metadata.update({"email": email_match.group(1)})
+        submitter = email_match.group(1)
+        email = email_match.group(2).strip()
     else:
-        logging.debug(f"Failed to parse email from submitter: {match.group(5)}")
+        submitter = from_field
 
-    return metadata
+    return CircularHeader(
+        circularId=number.strip(),
+        subject=subject.strip(),
+        createdOn=date.strip(),
+        submitter=submitter.strip(),
+        email=email
+    )
