@@ -4,7 +4,7 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import PydanticOutputParser
 
 from pydantic import BaseModel, Field
-from typing import List, Literal, Optional
+from typing import List, Literal, Optional, Union
 import logging
 
 logger = logging.getLogger(__name__)
@@ -53,13 +53,13 @@ You are an expert astronomer analyzing NASA GCN Circulars.
 3.  Output Format:
 {format_instructions}
 Example for 3 paragraphs: `["HeaderInformation", "AuthorList", "ScientificContent"]`
-"""
+""".strip()
 
 
 _HUMAN_LABEL_PROMPT = """
 **Numbered Paragraphs:**
 {numbered_paragraphs}
-"""
+""".strip()
 
 LABEL_PROMPT = ChatPromptTemplate.from_messages([
     ("system", _SYSTEM_LABEL_PROMPT),
@@ -73,7 +73,7 @@ def TopicLabelerChain():
     llm = llm_client.getLLM()
     return LABEL_PROMPT | llm | labels_parser
 
-# --- TopicLabelerChain ---
+# --- ParseAuthorshipChain ---
 
 class AuthorEntry(BaseModel):
     author: str = Field(description="Author name.")
@@ -95,12 +95,12 @@ You are an expert in parsing astronomical and scientific authorship lists. Your 
 4. Author names may appear as "Initial. Lastname". Preserve spacing and punctuation as given.
 
 {format_instructions}
-"""
+""".strip()
 
 _HUMAN_AUTHORSHIP_PROMPT = """
 **Input Text:**
 {content}
-"""
+""".strip()
 
 AUTHORSHIP_PROMPT = ChatPromptTemplate.from_messages([
     ("system", _SYSTEM_AUTHORSHIP_PROMPT),
@@ -110,3 +110,92 @@ AUTHORSHIP_PROMPT = ChatPromptTemplate.from_messages([
 def ParseAuthorshipChain():
     llm = llm_client.getLLM()
     return AUTHORSHIP_PROMPT | llm | authorship_parser
+
+# --- ParseReferenceChain ---
+
+class Reference(BaseModel):
+    "Represents a single reference URL extracted from a GCN Circular."
+    type: Union[Literal["image", "data", "report", "catalog", "lightcurve", "spectrum"], str] = Field(description="Type of information.")
+    url: str = Field(description="The exact URL as it appears in the original text.")
+
+class ReferenceList(BaseModel):
+    references: List[Reference] = Field(default_factory=list)
+
+reference_parser = PydanticOutputParser(pydantic_object=ReferenceList)
+
+_SYSTEM_REFERENCE_PROMPT = """
+You are an expert astronomer analyzing a NASA GCN Circular.
+Extract **all** URLs that appear **verbatim** in the provided text.
+Do NOT generate, complete, infer, or paraphrase URLs.
+
+Focus on links mentioned after phrases like:
+- "available at"
+- "found at"
+- "posted at"
+- "can be obtained at"
+
+If no URLs are found, return an empty array: [].
+
+{format_instructions}
+""".strip()
+
+_HUMAN_REFERENCE_PROMPT = """
+Extract any reference URL from the following GCN Circular excerpt:
+
+{content}
+""".strip()
+
+REFERENCE_PROMPT = ChatPromptTemplate.from_messages([
+    ("system", _SYSTEM_REFERENCE_PROMPT),
+    ("human", _HUMAN_REFERENCE_PROMPT)
+]).partial(format_instructions=reference_parser.get_format_instructions())
+
+def ParseReferenceChain():
+    llm = llm_client.getLLM()
+    logger.debug("Building reference parsing chain...")
+    return REFERENCE_PROMPT | llm | reference_parser
+
+# --- ParseContactINFOChain ---
+
+class ContactItem(BaseModel):
+    """
+    A single contact entry: either an email or a phone number.
+    """
+    type: Union[Literal["email", "phone"], str] = Field(description="Type of contact")
+    value: str = Field(description="Exact string from the original text")
+
+class ContactList(BaseModel):
+    contacts: List[ContactItem] = Field(default_factory=list)
+
+contact_info_parser = PydanticOutputParser(pydantic_object=ContactList)
+
+_SYSTEM_CONTACTINFO_PROMPT = """
+You are an expert astronomer analyzing a NASA GCN Circular.
+Extract **all** email addresses and phone numbers that appear **exactly** in the provided text.
+Do NOT guess, correct formatting, or invent contact details. Only include what is literally present.
+
+Look near phrases like:
+- "contact"
+- "direct communications to"
+- "for further information"
+
+If no contacts are found, return an empty array: [].
+
+{format_instructions}
+"""
+
+_HUMAN_CONTACTINFO_PROMPT = """
+Extract contact information from the following GCN Circular excerpt:
+
+{content}
+""".strip()
+
+CONTACTINFO_PROMPT = ChatPromptTemplate.from_messages([
+    ("system", _SYSTEM_CONTACTINFO_PROMPT),
+    ("human", _HUMAN_CONTACTINFO_PROMPT)
+]).partial(format_instructions=contact_info_parser.get_format_instructions())
+
+def ParseContactINFOChain():
+    llm = llm_client.getLLM()
+    logger.debug("Building contact information parsing chain...")
+    return CONTACTINFO_PROMPT | llm | contact_info_parser

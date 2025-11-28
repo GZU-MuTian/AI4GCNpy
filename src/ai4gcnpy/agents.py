@@ -1,4 +1,4 @@
-from .chains import TopicLabelerChain, ParseAuthorshipChain
+from .chains import TopicLabelerChain, ParseAuthorshipChain, ParseReferenceChain, ParseContactINFOChain
 from .utils import split_text_into_paragraphs, group_paragraphs_by_labels, header_regex_match
 
 from langgraph.graph import StateGraph, START, END
@@ -58,7 +58,7 @@ def text_split(state: CircularState) -> Dict[str, Any]:
 
     try:
         responses = chain.invoke({"numbered_paragraphs": numbered_paragraphs_str})
-        logger.debug(f"TopicLabelerChain completed: {responses.labels}")
+        logger.info(f"Paragraph labeling results: {responses.labels}")
     except Exception as e:
         logger.error(f"Failed to label topic: {e}", exc_info=True)
         return {}
@@ -138,6 +138,11 @@ def extract_author_list(state: CircularState) -> Dict[str, Any]:
         logger.error(f"Failed to parse author list: {e}", exc_info=True)
         return {}
 
+    # Check
+    for author in responses.authors:
+        if (author.author not in paragraph) or (author.affiliation not in paragraph):
+            logger.error(f"EXTRACTION HALLUCINATION DETECTED: {author.model_dump()}")
+
     # Update extracted dataset
     current_extracted = state.extracted_dset
     updated_extracted = {**current_extracted, **responses.model_dump()}
@@ -192,9 +197,22 @@ def extract_references(state: CircularState) -> Dict[str, Any]:
     if not paragraph.strip():
         raise ValueError("References paragraph is empty or missing.")
 
-    # --- Placeholder Extraction Logic ---
-    extracted_info = {"references_sample": "example"}
-    logger.debug("Successfully extracted information: %s", extracted_info)
+    # parse GCN Circular references
+    logger.debug("Parsing references.")
+    chain = ParseReferenceChain()
+
+    try:
+        responses = chain.invoke({"content": paragraph})
+        logger.debug(f"ParseReferenceChain completed. Found {len(responses.references)} references.")
+    except Exception as e:
+        logger.error(f"Failed to parse references: {e}", exc_info=True)
+
+    # Check
+    for ref in responses.references:
+        if ref.url not in paragraph:
+            logger.error(f"EXTRACTION HALLUCINATION DETECTED: URL={ref.url!r}")
+
+    extracted_info = responses.model_dump()
 
     # Update extracted dataset
     current_extracted = state.extracted_dset
@@ -220,9 +238,22 @@ def extract_contact_information(state: CircularState) -> Dict[str, Any]:
     if not paragraph.strip():
         raise ValueError("ContactInformation paragraph is empty or missing.")
 
-    # --- Placeholder Extraction Logic ---
-    extracted_info = {"contact_information_sample": "example"}
-    logger.debug("Successfully extracted information: %s", extracted_info)
+    # parse GCN Circular contact information
+    logger.debug("Parsing contact information.")
+    chain = ParseContactINFOChain()
+
+    try:
+        responses = chain.invoke({"content": paragraph})
+        logger.debug(f"ParseContactINFOChain completed. Found {len(responses.contacts)} contacts.")
+    except Exception as e:
+        logger.error(f"Failed to parse references: {e}", exc_info=True)
+
+    # Check
+    for contact in responses.contacts:
+        if contact.value not in paragraph:
+            logger.error(f"EXTRACTION HALLUCINATION DETECTED: Contact={contact.value}")
+
+    extracted_info = responses.model_dump()
 
     # Update extracted dataset
     current_extracted = state.extracted_dset
@@ -246,11 +277,9 @@ def retain_original_text(state: CircularState) -> Dict[str, Any]:
     """ 
     paragraph = state.paragraphs.get(state.current_label, "")
     if not paragraph.strip():
-        raise ValueError("Acknowledgements paragraph is empty or missing.")
+        raise ValueError("Acknowledgements/CitationInstructions/Correction paragraph is empty or missing.")
 
-    # --- Placeholder Extraction Logic ---
-    extracted_info = {"acknowledgements_sample": "example"}
-    logger.debug("Successfully extracted information: %s", extracted_info)
+    extracted_info = {state.current_label: paragraph}
 
     # Update extracted dataset
     current_extracted = state.extracted_dset

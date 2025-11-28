@@ -69,7 +69,7 @@ def main(
     logging.config.dictConfig(LOGGING_CONFIG)
 
 @app.command(help="Extract structured information from a GCN Circular using an LLM.")
-def Extractor(
+def extractor(
     input_file: str = typer.Argument(..., help="Path to a text file containing GCN Circular content."),
     model: str = typer.Option("deepseek-chat", "--model", "-m", help="Model name."),
     model_provider: str = typer.Option("deepseek", "--provider", "-p", help="Model provider."),
