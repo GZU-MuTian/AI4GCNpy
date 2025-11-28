@@ -115,7 +115,7 @@ def ParseAuthorshipChain():
 
 class Reference(BaseModel):
     "Represents a single reference URL extracted from a GCN Circular."
-    type: Union[Literal["image", "data", "report", "catalog", "lightcurve", "spectrum"], str] = Field(description="Type of information.")
+    type: Union[Literal["image", "data", "analysis", "catalog", "lightcurve", "spectrum"], str] = Field(description="Type of information.")
     url: str = Field(description="The exact URL as it appears in the original text.")
 
 class ReferenceList(BaseModel):

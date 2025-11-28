@@ -15,7 +15,8 @@ def split_text_into_paragraphs(raw_text: str) -> List[str]:
     Returns:
         List[str]: A list of stripped, non-empty paragraphs.
     """
-    paragraphs = [p.strip() for p in raw_text.split("\n\n") if p.strip()]
+    cleaned = re.sub(r'\n\s*\n', '\n\n', raw_text)
+    paragraphs = [p.strip() for p in cleaned.split("\n\n") if p.strip()]
     logger.debug(f"Split text into {len(paragraphs)} paragraphs.")
     return paragraphs
 
