@@ -1,15 +1,11 @@
 from .chains import TopicLabelerChain, ParseAuthorshipChain, ParseReferenceChain, ParseContactINFOChain
-from .utils import split_text_into_paragraphs, group_paragraphs_by_labels, header_regex_match
+from .utils import split_text_into_paragraphs, group_paragraphs_by_labels, header_regex_match, contains_text
+from .chains import LabelList, AuthorList, ReferenceList, ContactList
 
 from langgraph.graph import StateGraph, START, END
-from langchain_core.runnables import Runnable
-from langchain_core.prompts import PromptTemplate
-from langchain_core.output_parsers import StrOutputParser
-from functools import partial
 
-from typing import List, Dict, Any, Literal, Optional
+from typing import List, Dict, Any, Optional
 from pydantic import BaseModel, Field
-import json
 import logging
 
 logger = logging.getLogger(__name__)
@@ -25,7 +21,7 @@ class CircularState(BaseModel):
     )
     pending_labels: List[str] = Field(default_factory=list, description="Keys left to process.")
     extracted_dset: Dict[str, Any] = Field(default_factory=dict, description="Dict storing extracted circular information.")
-    current_label: Optional[str] = Field(default=None, description="The label currently being processed.")
+    current_label: Optional[str] = Field(default="end_loop", description="The label currently being processed.")
 
 # --- Node Functions ---
 
@@ -44,24 +40,22 @@ def text_split(state: CircularState) -> Dict[str, Any]:
     # Split
     paragraphs = split_text_into_paragraphs(raw_text)
     if not paragraphs:
-        logger.warning("No paragraphs found in input text.")
-        return {}
+        raise ValueError("No paragraphs found in input text.")
 
     # Prepare input data with clear prefix P<N>
     numbered_paragraphs_parts = [f"<P{i+1}>{p}</P{i+1}>" for i, p in enumerate(paragraphs)]
-    numbered_paragraphs_str = "\n".join(numbered_paragraphs_parts)
-    logger.debug(numbered_paragraphs_str)
+    numbered_paragraphs_str = "\n\n".join(numbered_paragraphs_parts)
+    logger.debug(f"Split paragraphs:\n{numbered_paragraphs_str}")
 
     # Label using LLM
-    logger.debug("Labeling paragraphs with topics.")
-    chain = TopicLabelerChain()
-
-    try:
-        responses = chain.invoke({"numbered_paragraphs": numbered_paragraphs_str})
-        logger.info(f"Paragraph labeling results: {responses.labels}")
+    try:  
+        chain = TopicLabelerChain()
+        responses: LabelList = chain.invoke({"numbered_paragraphs": numbered_paragraphs_str})
+        labels = responses.labels
+        logger.info(f"Paragraph labeling results: {labels}")
     except Exception as e:
-        logger.error(f"Failed to label topic: {e}", exc_info=True)
-        return {}
+        logger.error(f"TopicLabelerChain | Failed to label topic: {e}")
+        raise
 
     labeled_paragraphs = group_paragraphs_by_labels(paragraphs, responses.labels)
 
@@ -78,6 +72,7 @@ def router_node(state: CircularState)  -> Dict[str, Any]:
     if not pending_labels:
         logger.debug("Router: No pending labels — exiting loop.")
         return {"current_label": "end_loop"} 
+    
     current_label = pending_labels[0]
     logger.debug(f"Router: Selected next node '{current_label}'")
     return {"current_label": current_label}
@@ -100,7 +95,7 @@ def extract_header_information(state: CircularState) -> Dict[str, Any]:
 
     # parse GCN Circular header
     extracted_info = header_regex_match(paragraph)
-    logger.debug("Successfully extracted information: %s", extracted_info)
+    logger.debug("Successfully extracted head information: %s", extracted_info)
 
     # Update extracted dataset
     current_extracted = state.extracted_dset
@@ -123,32 +118,26 @@ def extract_author_list(state: CircularState) -> Dict[str, Any]:
     Returns:
         Dict[str, Any]: Updates the state with the 'extracted_dset' key.
     """
+    # Remove the processed label
+    updated_pending = state.pending_labels[1:]
+
     paragraph = state.paragraphs.get("AuthorList", "")
     if not paragraph.strip():
-        raise ValueError("AuthorList paragraph is empty or missing.")
+        logger.warning("AuthorList paragraph is empty or missing.")
+        return {"pending_labels": updated_pending}
 
     # parse GCN Circular author list
-    logger.debug("Parsing author list.")
-    chain = ParseAuthorshipChain()
-
     try:
-        responses = chain.invoke({"content": paragraph})
-        logger.debug(f"ParseAuthorshipChain completed:\n{responses.model_dump()}")
+        chain = ParseAuthorshipChain()
+        responses: AuthorList = chain.invoke({"content": paragraph})
     except Exception as e:
-        logger.error(f"Failed to parse author list: {e}", exc_info=True)
-        return {}
-
-    # Check
-    for author in responses.authors:
-        if (author.author not in paragraph) or (author.affiliation not in paragraph):
-            logger.error(f"EXTRACTION HALLUCINATION DETECTED: {author.model_dump()}")
+        logger.error(f"Failed to parse author list: {e}")
+        return {"pending_labels": updated_pending}
 
     # Update extracted dataset
     current_extracted = state.extracted_dset
     updated_extracted = {**current_extracted, **responses.model_dump()}
 
-    # Remove the processed label
-    updated_pending = state.pending_labels[1:]
     return {
         "extracted_dset": updated_extracted,
         "pending_labels": updated_pending
@@ -165,9 +154,13 @@ def extract_scientific_content(state: CircularState) -> Dict[str, Any]:
     Returns:
         Dict[str, Any]: Updates the state with the 'extracted_dset' key.
     """ 
+    # Remove the processed label
+    updated_pending = state.pending_labels[1:]
+
     paragraph = state.paragraphs.get("ScientificContent", "")
     if not paragraph.strip():
-        raise ValueError("ScientificContent paragraph is empty or missing.")
+        logger.warning("ScientificContent paragraph is empty or missing.")
+        return {"pending_labels": updated_pending}
 
     # --- Placeholder Extraction Logic ---
     extracted_info = {"scientific_content_sample": "example"}
@@ -177,8 +170,7 @@ def extract_scientific_content(state: CircularState) -> Dict[str, Any]:
     current_extracted = state.extracted_dset
     updated_extracted = {**current_extracted, **extracted_info}
 
-    # Remove the processed label
-    updated_pending = state.pending_labels[1:]
+
     return {
         "extracted_dset": updated_extracted,
         "pending_labels": updated_pending
@@ -193,33 +185,28 @@ def extract_references(state: CircularState) -> Dict[str, Any]:
     Returns:
         Dict[str, Any]: Updates the state with the 'extracted_dset' key.
     """ 
+    # Remove the processed label
+    updated_pending = state.pending_labels[1:]
+
     paragraph = state.paragraphs.get("References", "")
     if not paragraph.strip():
-        raise ValueError("References paragraph is empty or missing.")
+        logger.warning("References paragraph is empty or missing.")
+        return {"pending_labels": updated_pending}
 
     # parse GCN Circular references
-    logger.debug("Parsing references.")
-    chain = ParseReferenceChain()
-
     try:
-        responses = chain.invoke({"content": paragraph})
-        logger.debug(f"ParseReferenceChain completed. Found {len(responses.references)} references.")
+        chain = ParseReferenceChain()
+        responses: ReferenceList = chain.invoke({"content": paragraph})
+        types = [ref.type for ref in responses.references]
+        logger.info("Extracted reference types: %s", types)
     except Exception as e:
-        logger.error(f"Failed to parse references: {e}", exc_info=True)
-
-    # Check
-    for ref in responses.references:
-        if ref.url not in paragraph:
-            logger.error(f"EXTRACTION HALLUCINATION DETECTED: URL={ref.url!r}")
-
-    extracted_info = responses.model_dump()
+        logger.error(f"Failed to parse references: {e}")
+        return {"pending_labels": updated_pending}
 
     # Update extracted dataset
     current_extracted = state.extracted_dset
-    updated_extracted = {**current_extracted, **extracted_info}
+    updated_extracted = {**current_extracted, **responses.model_dump()}
 
-    # Remove the processed label
-    updated_pending = state.pending_labels[1:]
     return {
         "extracted_dset": updated_extracted,
         "pending_labels": updated_pending
@@ -234,33 +221,28 @@ def extract_contact_information(state: CircularState) -> Dict[str, Any]:
     Returns:
         Dict[str, Any]: Updates the state with the 'extracted_dset' key.
     """ 
+    # Remove the processed label
+    updated_pending = state.pending_labels[1:]
+
     paragraph = state.paragraphs.get("ContactInformation", "")
     if not paragraph.strip():
-        raise ValueError("ContactInformation paragraph is empty or missing.")
+        logger.warning("ContactInformation paragraph is empty or missing.")
+        return {"pending_labels": updated_pending}
 
     # parse GCN Circular contact information
-    logger.debug("Parsing contact information.")
-    chain = ParseContactINFOChain()
-
     try:
-        responses = chain.invoke({"content": paragraph})
-        logger.debug(f"ParseContactINFOChain completed. Found {len(responses.contacts)} contacts.")
+        chain = ParseContactINFOChain()
+        responses: ContactList = chain.invoke({"content": paragraph})
+        types = [contact.type for contact in responses.contacts]
+        logger.info("Extracted contact types: %s", types)
     except Exception as e:
-        logger.error(f"Failed to parse references: {e}", exc_info=True)
-
-    # Check
-    for contact in responses.contacts:
-        if contact.value not in paragraph:
-            logger.error(f"EXTRACTION HALLUCINATION DETECTED: Contact={contact.value}")
-
-    extracted_info = responses.model_dump()
+        logger.error(f"Failed to parse references: {e}")
+        return {"pending_labels": updated_pending}
 
     # Update extracted dataset
     current_extracted = state.extracted_dset
-    updated_extracted = {**current_extracted, **extracted_info}
+    updated_extracted = {**current_extracted, **responses.model_dump()}
 
-    # Remove the processed label
-    updated_pending = state.pending_labels[1:]
     return {
         "extracted_dset": updated_extracted,
         "pending_labels": updated_pending
@@ -275,18 +257,21 @@ def retain_original_text(state: CircularState) -> Dict[str, Any]:
     Returns:
         Dict[str, Any]: Updates the state with the 'extracted_dset' key.
     """ 
+    # Remove the processed label
+    current_label = state.current_label
+    updated_pending = state.pending_labels[1:]
+
     paragraph = state.paragraphs.get(state.current_label, "")
     if not paragraph.strip():
-        raise ValueError("Acknowledgements/CitationInstructions/Correction paragraph is empty or missing.")
+        logger.warning(f"{current_label} paragraph is empty or missing.")
+        return {"pending_labels": updated_pending}
 
-    extracted_info = {state.current_label: paragraph}
+    extracted_info = {current_label.lower(): paragraph}
 
     # Update extracted dataset
     current_extracted = state.extracted_dset
     updated_extracted = {**current_extracted, **extracted_info}
     
-    # Remove the processed label
-    updated_pending = state.pending_labels[1:]
     return {
         "extracted_dset": updated_extracted,
         "pending_labels": updated_pending
@@ -302,7 +287,7 @@ def GCNExtractorAgent():
     Returns:
         StateGraph: The compiled workflow graph.
     """
-    logging.debug("Creating LangGraph workflow.")
+    logging.debug("Creating GCNExtractorAgent workflow.")
     # Initialize the state graph 
     workflow = StateGraph(CircularState)
 

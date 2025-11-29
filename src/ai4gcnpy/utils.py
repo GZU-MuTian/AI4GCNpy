@@ -107,8 +107,8 @@ def contains_text(paragraph: str, target: str, case_sensitive: bool = False) -> 
         bool: True if `target` is found in `paragraph`, False otherwise.
     """
     # Normalize case if case-insensitive search is requested
-    search_space = paragraph if case_sensitive else paragraph.strip().lower()
-    search_term = target if case_sensitive else target.strip().lower()
+    search_space = paragraph if case_sensitive else paragraph.lower()
+    search_term = target if case_sensitive else target.lower()
 
     # Perform substring check
     return search_term in search_space

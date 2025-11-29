@@ -79,11 +79,11 @@ class AuthorEntry(BaseModel):
     author: str = Field(description="Author name.")
     affiliation: str = Field(description="Institutional affiliation.")
 
-class Collaboration(BaseModel):
+class AuthorList(BaseModel):
     collaboration: Optional[str] = Field(default=None, description="Name of the collaboration or team, or null if not mentioned")
     authors: List[AuthorEntry] = Field(default_factory=list, description="List of authors and their affiliations")
 
-authorship_parser = PydanticOutputParser(pydantic_object=Collaboration)
+author_list_parser = PydanticOutputParser(pydantic_object=AuthorList)
 
 _SYSTEM_AUTHORSHIP_PROMPT = """
 You are an expert in parsing astronomical and scientific authorship lists. Your task is to extract structured information from the input text.
@@ -105,17 +105,18 @@ _HUMAN_AUTHORSHIP_PROMPT = """
 AUTHORSHIP_PROMPT = ChatPromptTemplate.from_messages([
     ("system", _SYSTEM_AUTHORSHIP_PROMPT),
     ("human", _HUMAN_AUTHORSHIP_PROMPT)
-]).partial(format_instructions=authorship_parser.get_format_instructions())
+]).partial(format_instructions=author_list_parser.get_format_instructions())
 
 def ParseAuthorshipChain():
     llm = llm_client.getLLM()
-    return AUTHORSHIP_PROMPT | llm | authorship_parser
+    return AUTHORSHIP_PROMPT | llm | author_list_parser
 
 # --- ParseReferenceChain ---
 
 class Reference(BaseModel):
     "Represents a single reference URL extracted from a GCN Circular."
-    type: Union[Literal["image", "data", "analysis", "catalog", "lightcurve", "spectrum"], str] = Field(description="Type of information.")
+    # type: Union[Literal["image", "data", "analysis", "catalog", "lightcurve", "spectrum"], str] = Field(description="Type of information.")
+    type: str = Field(description="Type of information.")
     url: str = Field(description="The exact URL as it appears in the original text.")
 
 class ReferenceList(BaseModel):
@@ -140,7 +141,7 @@ If no URLs are found, return an empty array: [].
 """.strip()
 
 _HUMAN_REFERENCE_PROMPT = """
-Extract any reference URL from the following GCN Circular excerpt:
+Extract any reference URL from the following GCN Circular:
 
 {content}
 """.strip()
@@ -152,7 +153,6 @@ REFERENCE_PROMPT = ChatPromptTemplate.from_messages([
 
 def ParseReferenceChain():
     llm = llm_client.getLLM()
-    logger.debug("Building reference parsing chain...")
     return REFERENCE_PROMPT | llm | reference_parser
 
 # --- ParseContactINFOChain ---
@@ -161,7 +161,8 @@ class ContactItem(BaseModel):
     """
     A single contact entry: either an email or a phone number.
     """
-    type: Union[Literal["email", "phone"], str] = Field(description="Type of contact")
+    # type: Union[Literal["email", "phone"], str] = Field(description="Type of contact")
+    type: str = Field(description="Type of contact")
     value: str = Field(description="Exact string from the original text")
 
 class ContactList(BaseModel):
@@ -171,7 +172,7 @@ contact_info_parser = PydanticOutputParser(pydantic_object=ContactList)
 
 _SYSTEM_CONTACTINFO_PROMPT = """
 You are an expert astronomer analyzing a NASA GCN Circular.
-Extract **all** email addresses and phone numbers that appear **exactly** in the provided text.
+Extract **all** email addresses or phone numbers that appear **exactly** in the provided text.
 Do NOT guess, correct formatting, or invent contact details. Only include what is literally present.
 
 Look near phrases like:
@@ -197,22 +198,21 @@ CONTACTINFO_PROMPT = ChatPromptTemplate.from_messages([
 
 def ParseContactINFOChain():
     llm = llm_client.getLLM()
-    logger.debug("Building contact information parsing chain...")
     return CONTACTINFO_PROMPT | llm | contact_info_parser
 
 
 # --- PhysicalChain ---
 
-class PhysicalQuantity(BaseModel):
-    name: str
-    have: bool
-    describe: str
+# class PhysicalQuantity(BaseModel):
+#     name: str
+#     have: bool
+#     describe: str
 
-class GCNEvent(BaseModel):
-    spectral_lag: Optional[PhysicalQuantity] = Field(None, description="光谱滞后")
-    photon_index: Optional[PhysicalQuantity] = Field(None, description="幂律谱指数")
-    fluence_15_150_keV: Optional[PhysicalQuantity] = Field(None, description="15–150 keV 能段流量")
-    peak_photon_flux: Optional[PhysicalQuantity] = Field(None, description="1秒峰值光子流量")
+# class GCNEvent(BaseModel):
+#     spectral_lag: Optional[PhysicalQuantity] = Field(None, description="光谱滞后")
+#     photon_index: Optional[PhysicalQuantity] = Field(None, description="幂律谱指数")
+#     fluence_15_150_keV: Optional[PhysicalQuantity] = Field(None, description="15–150 keV 能段流量")
+#     peak_photon_flux: Optional[PhysicalQuantity] = Field(None, description="1秒峰值光子流量")
 
 # --- TopicChain ---
 
