@@ -76,18 +76,31 @@ def header_regex_match(header: str) -> Dict[str, Any]:
     title, number, subject, date, from_field = match.groups()
 
     # Try to extract email
-    email = ""
-    email_match  = re.fullmatch(r'\s*(.*?)\s*<([^>]+)>\s*', from_field)
-    if email_match:
-        submitter = email_match.group(1)
-        email = email_match.group(2).strip()
+    submitter_match  = re.fullmatch(r'\s*(.*?)\s*<([^>]+)>\s*', from_field)
+    if submitter_match:
+        submitter = submitter_match.group(1).strip()
+        email = submitter_match.group(2).strip()
     else:
-        submitter = from_field
+        submitter = from_field.strip()
+        email = ""
 
     return {
         "circularId": number.strip(),
         "subject": subject.strip(),
         "createdOn": date.strip(),
-        "submitter": submitter.strip(),
+        "submitter": submitter,
         "email": email
     }
+
+
+def normalize(s: str) -> str:
+    """
+    Normalize a given string by stripping whitespace and converting to lowercase.
+
+    Args:
+        s (str): The input string to normalize.
+
+    Returns:
+        str: A normalized version of the input string (stripped and lowercased).
+    """
+    return s.strip().lower()
