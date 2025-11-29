@@ -1,21 +1,17 @@
-from . import llm_client
-from .agents import CircularState, GCNExtractorAgent
+from .core import _run_extraction
 
-from pathlib import Path
 from typing import Optional, Literal
 import typer
 from rich.console import Console
 from rich.logging import RichHandler
 from rich.rule import Rule
+from rich.json import JSON
 import logging
 import logging.config
-from dotenv import load_dotenv
-
-load_dotenv()
 
 # Global console and logger
 logger = logging.getLogger(__name__)
-console = Console()
+console = Console(highlight=False)
 
 
 # --- CLI Command ---
@@ -80,34 +76,21 @@ def extractor(
     """
     Main CLI entry point to run the GCN extractor.
     """
-    # Read input file
     try:
-        text = Path(input_file).read_text(encoding="utf-8")
-    except (OSError, UnicodeDecodeError) as e:
-        logger.error("Cannot read input file %s: %s", input_file, e)
+        results = _run_extraction(
+            input_file=input_file,
+            model=model,
+            model_provider=model_provider,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            reasoning=reasoning,
+        )
+    except Exception as e:
+        logger.error(f"❌ Extraction failed: {e}")
         raise typer.Exit(code=1)
 
-    llm_config = {
-        "model": model,
-        "model_provider": model_provider,
-    }
-    if temperature is not None:
-        llm_config["temperature"] = temperature
-    if max_tokens is not None:
-        llm_config["max_tokens"] = max_tokens
-    if reasoning is not None:
-        llm_config["reasoning"] = reasoning
-    llm_client.basicConfig(**llm_config)
-
-    # Compile into a runnable app
-    app = GCNExtractorAgent()
-
-    # # Run the workflow
-    initial_state = CircularState(raw_text=text)
-    final_state = app.invoke(initial_state)
-
-    # # Output results
+    # Output results
     console.print(Rule("Circular", style="dim"))
-    console.print(final_state["raw_text"])
-    console.print(Rule("Extracted Results", style="dim"))
-    console.print(final_state["extracted_dset"])
+    console.print(results["raw_text"])
+    console.print(Rule("Extraction Result", style="dim"))
+    console.print(JSON.from_data(results["extracted_dset"]))

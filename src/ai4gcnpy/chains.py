@@ -199,3 +199,22 @@ def ParseContactINFOChain():
     llm = llm_client.getLLM()
     logger.debug("Building contact information parsing chain...")
     return CONTACTINFO_PROMPT | llm | contact_info_parser
+
+
+# --- PhysicalChain ---
+
+class PhysicalQuantity(BaseModel):
+    name: str
+    have: bool
+    describe: str
+
+class GCNEvent(BaseModel):
+    spectral_lag: Optional[PhysicalQuantity] = Field(None, description="光谱滞后")
+    photon_index: Optional[PhysicalQuantity] = Field(None, description="幂律谱指数")
+    fluence_15_150_keV: Optional[PhysicalQuantity] = Field(None, description="15–150 keV 能段流量")
+    peak_photon_flux: Optional[PhysicalQuantity] = Field(None, description="1秒峰值光子流量")
+
+# --- TopicChain ---
+
+
+# --- CircularRelationChain ---
