@@ -26,17 +26,13 @@ LogLevel = Literal["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
 
 @app.callback()
 def main(
-    log_level: Optional[LogLevel] = typer.Option(None, "--log-level", "-v", help="Enable logging with specified level (e.g., DEBUG, INFO, WARNING). Disabled by default."),
+    log_level: LogLevel = typer.Option("ERROR", "--log-level", "-v", help="Enable logging with specified level (e.g., DEBUG, INFO, WARNING). ERROR by default."),
 ) -> None:
     """
     Global options for all commands.
     
     The --log-level option applies to every subcommand automatically.
     """
-    if log_level is None:
-        logging.disable(logging.WARNING)
-        return
-
     LOGGING_CONFIG = {
         "version": 1,
         "disable_existing_loggers": False,
@@ -90,7 +86,7 @@ def extractor(
         results.get("raw_text", ""),
         title="Circular", 
     ))
-    extracted_dset = results.get("extracted_dset", "")
+    extracted_dset = results.get("extracted_dset", {})
     console.print(Panel(
         JSON.from_data(extracted_dset),
         title="Extraction Result", 
