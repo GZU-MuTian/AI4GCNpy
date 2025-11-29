@@ -47,8 +47,9 @@ def basicConfig(**kwargs) -> None:
     try:
         _GLOBAL_LLM_CONFIG = LLMConfig(**kwargs)
         logger.debug("Initializing LLM with config: %s", _GLOBAL_LLM_CONFIG.model_dump())
-    except ValidationError as e:
-        raise ValueError(f"Invalid LLM configuration: {e}") from e
+    except Exception as e:
+        field_names = list(LLMConfig.model_fields.keys())
+        raise ValueError(f"Invalid LLM configuration. Expected schema:\n{field_names}")
 
 
 def getLLM() -> BaseChatModel:
