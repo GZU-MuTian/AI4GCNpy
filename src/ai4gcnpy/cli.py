@@ -4,7 +4,7 @@ from typing import Optional, Literal
 import typer
 from rich.console import Console
 from rich.logging import RichHandler
-from rich.rule import Rule
+from rich.panel import Panel
 from rich.json import JSON
 import logging
 import logging.config
@@ -48,9 +48,9 @@ def main(
         },
         "handlers": {
             "rich": {
-                "()": RichHandler,               # ← 关键：指定 handler 类
+                "()": RichHandler,
                 "level": log_level,
-                "rich_tracebacks": True,
+                "rich_tracebacks": False,
                 "show_time": True,
                 "show_path": True,
                 "formatter": "default",
@@ -76,21 +76,23 @@ def extractor(
     """
     Main CLI entry point to run the GCN extractor.
     """
-    try:
-        results = _run_extraction(
-            input_file=input_file,
-            model=model,
-            model_provider=model_provider,
-            temperature=temperature,
-            max_tokens=max_tokens,
-            reasoning=reasoning,
-        )
-    except Exception as e:
-        logger.error(f"❌ Extraction failed: {e}")
-        raise typer.Exit(code=1)
+    results = _run_extraction(
+        input_file=input_file,
+        model=model,
+        model_provider=model_provider,
+        temperature=temperature,
+        max_tokens=max_tokens,
+        reasoning=reasoning,
+    )
 
     # Output results
-    console.print(Rule("Circular", style="dim"))
-    console.print(results["raw_text"])
-    console.print(Rule("Extraction Result", style="dim"))
-    console.print(JSON.from_data(results["extracted_dset"]))
+    console.print(Panel(
+        results.get("raw_text", ""),
+        title="Circular", 
+    ))
+    extracted_dset = results.get("extracted_dset", "")
+    console.print(Panel(
+        JSON.from_data(extracted_dset),
+        title="Extraction Result", 
+    ))
+
