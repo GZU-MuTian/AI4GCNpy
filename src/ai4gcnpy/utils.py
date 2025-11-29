@@ -93,14 +93,22 @@ def header_regex_match(header: str) -> Dict[str, Any]:
     }
 
 
-def normalize(s: str) -> str:
+def contains_text(paragraph: str, target: str, case_sensitive: bool = False) -> bool:
     """
-    Normalize a given string by stripping whitespace and converting to lowercase.
-
+    Check whether a target substring exists within a given paragraph.
+    
     Args:
-        s (str): The input string to normalize.
+        paragraph (str): The full text in which to search.
+        target (str): The substring to look for.
+        case_sensitive (bool): If True, the search respects letter casing.
+                               If False (default), both strings are converted to lowercase before comparison.
 
     Returns:
-        str: A normalized version of the input string (stripped and lowercased).
+        bool: True if `target` is found in `paragraph`, False otherwise.
     """
-    return s.strip().lower()
+    # Normalize case if case-insensitive search is requested
+    search_space = paragraph if case_sensitive else paragraph.strip().lower()
+    search_term = target if case_sensitive else target.strip().lower()
+
+    # Perform substring check
+    return search_term in search_space
