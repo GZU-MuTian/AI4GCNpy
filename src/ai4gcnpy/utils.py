@@ -91,24 +91,3 @@ def header_regex_match(header: str) -> Dict[str, Any]:
         "submitter": submitter,
         "email": email
     }
-
-
-def contains_text(paragraph: str, target: str, case_sensitive: bool = False) -> bool:
-    """
-    Check whether a target substring exists within a given paragraph.
-    
-    Args:
-        paragraph (str): The full text in which to search.
-        target (str): The substring to look for.
-        case_sensitive (bool): If True, the search respects letter casing.
-                               If False (default), both strings are converted to lowercase before comparison.
-
-    Returns:
-        bool: True if `target` is found in `paragraph`, False otherwise.
-    """
-    # Normalize case if case-insensitive search is requested
-    search_space = paragraph if case_sensitive else paragraph.lower()
-    search_term = target if case_sensitive else target.lower()
-
-    # Perform substring check
-    return search_term in search_space

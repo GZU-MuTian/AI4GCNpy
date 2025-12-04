@@ -1,6 +1,6 @@
-from .chains import TopicLabelerChain, ParseAuthorshipChain, ParseReferenceChain, ParseContactINFOChain
-from .utils import split_text_into_paragraphs, group_paragraphs_by_labels, header_regex_match, contains_text
-from .chains import LabelList, AuthorList, ReferenceList, ContactList
+from .chains import TopicLabelerChain, ParseAuthorshipChain
+from .utils import split_text_into_paragraphs, group_paragraphs_by_labels, header_regex_match
+from .chains import LabelList, AuthorList
 
 from langgraph.graph import StateGraph, START, END
 
@@ -25,7 +25,7 @@ class CircularState(BaseModel):
 
 # --- Node Functions ---
 
-def text_split(state: CircularState) -> Dict[str, Any]:
+def text_split(state: CircularState) -> Dict[str, Any]: 
     """
     Assign topic labels to paragraphs using an LLM.
     
@@ -177,78 +177,6 @@ def extract_scientific_content(state: CircularState) -> Dict[str, Any]:
     }
 
 
-def extract_references(state: CircularState) -> Dict[str, Any]:
-    """
-    Args:
-        state (CircularState): Current graph state containing 'paragraphs' and 'pending_labels'.
-        
-    Returns:
-        Dict[str, Any]: Updates the state with the 'extracted_dset' key.
-    """ 
-    # Remove the processed label
-    updated_pending = state.pending_labels[1:]
-
-    paragraph = state.paragraphs.get("References", "")
-    if not paragraph.strip():
-        logger.warning("References paragraph is empty or missing.")
-        return {"pending_labels": updated_pending}
-
-    # parse GCN Circular references
-    try:
-        chain = ParseReferenceChain()
-        responses: ReferenceList = chain.invoke({"content": paragraph})
-        types = [ref.type for ref in responses.references]
-        logger.info("Extracted reference types: %s", types)
-    except Exception as e:
-        logger.error(f"Failed to parse references: {e}")
-        return {"pending_labels": updated_pending}
-
-    # Update extracted dataset
-    current_extracted = state.extracted_dset
-    updated_extracted = {**current_extracted, **responses.model_dump()}
-
-    return {
-        "extracted_dset": updated_extracted,
-        "pending_labels": updated_pending
-    }
-
-
-def extract_contact_information(state: CircularState) -> Dict[str, Any]:
-    """
-    Args:
-        state (CircularState): Current graph state containing 'paragraphs' and 'pending_labels'.
-        
-    Returns:
-        Dict[str, Any]: Updates the state with the 'extracted_dset' key.
-    """ 
-    # Remove the processed label
-    updated_pending = state.pending_labels[1:]
-
-    paragraph = state.paragraphs.get("ContactInformation", "")
-    if not paragraph.strip():
-        logger.warning("ContactInformation paragraph is empty or missing.")
-        return {"pending_labels": updated_pending}
-
-    # parse GCN Circular contact information
-    try:
-        chain = ParseContactINFOChain()
-        responses: ContactList = chain.invoke({"content": paragraph})
-        types = [contact.type for contact in responses.contacts]
-        logger.info("Extracted contact types: %s", types)
-    except Exception as e:
-        logger.error(f"Failed to parse references: {e}")
-        return {"pending_labels": updated_pending}
-
-    # Update extracted dataset
-    current_extracted = state.extracted_dset
-    updated_extracted = {**current_extracted, **responses.model_dump()}
-
-    return {
-        "extracted_dset": updated_extracted,
-        "pending_labels": updated_pending
-    }
-
-
 def retain_original_text(state: CircularState) -> Dict[str, Any]:
     """
     Args:
@@ -297,8 +225,6 @@ def GCNExtractorAgent():
     workflow.add_node("extract_header_information", extract_header_information)
     workflow.add_node("extract_author_list", extract_author_list)
     workflow.add_node("extract_scientific_content", extract_scientific_content)
-    workflow.add_node("extract_references", extract_references)
-    workflow.add_node("extract_contact_information", extract_contact_information)
     workflow.add_node("retain_original_text", retain_original_text)
 
     # Define the edges/flow between nodes
@@ -312,8 +238,8 @@ def GCNExtractorAgent():
             "HeaderInformation": "extract_header_information",
             "AuthorList": "extract_author_list",
             "ScientificContent": "extract_scientific_content",
-            "References": "extract_references",
-            "ContactInformation": "extract_contact_information",
+            "ExternalLinks": "retain_original_text",
+            "ContactInformation": "retain_original_text",
             "Acknowledgements": "retain_original_text",
             "CitationInstructions": "retain_original_text",
             "Correction": "retain_original_text",
@@ -324,8 +250,6 @@ def GCNExtractorAgent():
     workflow.add_edge("extract_header_information", "router_node")
     workflow.add_edge("extract_author_list", "router_node")
     workflow.add_edge("extract_scientific_content", "router_node")
-    workflow.add_edge("extract_references", "router_node")
-    workflow.add_edge("extract_contact_information", "router_node")
     workflow.add_edge("retain_original_text", "router_node")
 
     return workflow.compile()

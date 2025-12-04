@@ -16,7 +16,7 @@ _ALLOWED_LABEL = Literal[
     "HeaderInformation",
     "AuthorList",
     "ScientificContent",
-    "References",
+    "ExternalLinks",
     "ContactInformation",
     "Acknowledgements",
     "CitationInstructions",
@@ -36,7 +36,7 @@ You are an expert astronomer analyzing NASA GCN Circulars.
 - HeaderInformation: Contains circular metadata.
 - AuthorList: Lists author names, possibly followed by affiliations or a "on behalf of..." statement.
 - ScientificContent: Describes observations, analysis, results, or interpretations of an astronomical event.
-- References: Contains links to external astronomical resources.
+- ExternalLinks: Contains hyperlinks or URLs pointing to external astronomical resources
 - ContactInformation: Provides contact details such as email addresses or phone numbers.
 - Acknowledgements: Expresses gratitude for assistance or contributions.
 - CitationInstructions: Indicates that the message is citable.
@@ -47,7 +47,7 @@ You are an expert astronomer analyzing NASA GCN Circulars.
     - 1st Paragraph: Usually `HeaderInformation` (containing TITLE, NUMBER, SUBJECT, DATE, FROM).
     - 2nd Paragraph: Usually `AuthorList`.
     - Middle Paragraph(s): Primarily `ScientificContent`.
-    - Optional sections like `References`, `ContactInformation`, and `Acknowledgements` usually appear toward the end.
+    - Optional sections like `ExternalLinks`, `ContactInformation`, and `Acknowledgements` usually appear toward the end.
     - Final paragraphs (if present) may be 'CitationInstructions' or `Correction` information.
 2.  Input Format: Each paragraph is enclosed in paired tags <PN>...</PN>, where N is the paragraph's order (1, 2, 3, ...). This numbering is for your reference to assign the correct tag based on position and content. Do NOT use any numbers found WITHIN the paragraph text to influence your decision.
 3.  Output Format:
@@ -80,7 +80,7 @@ class AuthorEntry(BaseModel):
     affiliation: str = Field(description="Institutional affiliation.")
 
 class AuthorList(BaseModel):
-    collaboration: Optional[str] = Field(default=None, description="Name of the collaboration or team, or null if not mentioned")
+    collaboration: str = Field(default="null", description="Name of the collaboration or team, or 'null' if not mentioned")
     authors: List[AuthorEntry] = Field(default_factory=list, description="List of authors and their affiliations")
 
 author_list_parser = PydanticOutputParser(pydantic_object=AuthorList)
@@ -110,96 +110,6 @@ AUTHORSHIP_PROMPT = ChatPromptTemplate.from_messages([
 def ParseAuthorshipChain():
     llm = llm_client.getLLM()
     return AUTHORSHIP_PROMPT | llm | author_list_parser
-
-# --- ParseReferenceChain ---
-
-class Reference(BaseModel):
-    "Represents a single reference URL extracted from a GCN Circular."
-    # type: Union[Literal["image", "data", "analysis", "catalog", "lightcurve", "spectrum"], str] = Field(description="Type of information.")
-    type: str = Field(description="Type of information.")
-    url: str = Field(description="The exact URL as it appears in the original text.")
-
-class ReferenceList(BaseModel):
-    references: List[Reference] = Field(default_factory=list)
-
-reference_parser = PydanticOutputParser(pydantic_object=ReferenceList)
-
-_SYSTEM_REFERENCE_PROMPT = """
-You are an expert astronomer analyzing a NASA GCN Circular.
-Extract **all** URLs that appear **verbatim** in the provided text.
-Do NOT generate, complete, infer, or paraphrase URLs.
-
-Focus on links mentioned after phrases like:
-- "available at"
-- "found at"
-- "posted at"
-- "can be obtained at"
-
-If no URLs are found, return an empty array: [].
-
-{format_instructions}
-""".strip()
-
-_HUMAN_REFERENCE_PROMPT = """
-Extract any reference URL from the following GCN Circular:
-
-{content}
-""".strip()
-
-REFERENCE_PROMPT = ChatPromptTemplate.from_messages([
-    ("system", _SYSTEM_REFERENCE_PROMPT),
-    ("human", _HUMAN_REFERENCE_PROMPT)
-]).partial(format_instructions=reference_parser.get_format_instructions())
-
-def ParseReferenceChain():
-    llm = llm_client.getLLM()
-    return REFERENCE_PROMPT | llm | reference_parser
-
-# --- ParseContactINFOChain ---
-
-class ContactItem(BaseModel):
-    """
-    A single contact entry: either an email or a phone number.
-    """
-    # type: Union[Literal["email", "phone"], str] = Field(description="Type of contact")
-    type: str = Field(description="Type of contact")
-    value: str = Field(description="Exact string from the original text")
-
-class ContactList(BaseModel):
-    contacts: List[ContactItem] = Field(default_factory=list)
-
-contact_info_parser = PydanticOutputParser(pydantic_object=ContactList)
-
-_SYSTEM_CONTACTINFO_PROMPT = """
-You are an expert astronomer analyzing a NASA GCN Circular.
-Extract **all** email addresses or phone numbers that appear **exactly** in the provided text.
-Do NOT guess, correct formatting, or invent contact details. Only include what is literally present.
-
-Look near phrases like:
-- "contact"
-- "direct communications to"
-- "for further information"
-
-If no contacts are found, return an empty array: [].
-
-{format_instructions}
-"""
-
-_HUMAN_CONTACTINFO_PROMPT = """
-Extract contact information from the following GCN Circular excerpt:
-
-{content}
-""".strip()
-
-CONTACTINFO_PROMPT = ChatPromptTemplate.from_messages([
-    ("system", _SYSTEM_CONTACTINFO_PROMPT),
-    ("human", _HUMAN_CONTACTINFO_PROMPT)
-]).partial(format_instructions=contact_info_parser.get_format_instructions())
-
-def ParseContactINFOChain():
-    llm = llm_client.getLLM()
-    return CONTACTINFO_PROMPT | llm | contact_info_parser
-
 
 # --- PhysicalChain ---
 
