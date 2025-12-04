@@ -1,6 +1,6 @@
-from .chains import TopicLabelerChain, ParseAuthorshipChain
+from .chains import ParagraphLabelerChain, ParseAuthorshipChain, ReportLabelerChain, ALLOWED_PARAGRAPH_LABELS, ALLOWED_REPORT_LABELS
 from .utils import split_text_into_paragraphs, group_paragraphs_by_labels, header_regex_match
-from .chains import LabelList, AuthorList
+from .chains import ParagraphLabelList, AuthorList, ReportLabel
 
 from langgraph.graph import StateGraph, START, END
 
@@ -21,7 +21,7 @@ class CircularState(BaseModel):
     )
     pending_labels: List[str] = Field(default_factory=list, description="Keys left to process.")
     extracted_dset: Dict[str, Any] = Field(default_factory=dict, description="Dict storing extracted circular information.")
-    current_label: Optional[str] = Field(default="end_loop", description="The label currently being processed.")
+    current_label: str = Field(default="end_loop", description="The label currently being processed.")
 
 # --- Node Functions ---
 
@@ -49,12 +49,12 @@ def text_split(state: CircularState) -> Dict[str, Any]:
 
     # Label using LLM
     try:  
-        chain = TopicLabelerChain()
-        responses: LabelList = chain.invoke({"numbered_paragraphs": numbered_paragraphs_str})
+        chain = ParagraphLabelerChain()
+        responses: ParagraphLabelList = chain.invoke({"numbered_paragraphs": numbered_paragraphs_str})
         labels = responses.labels
         logger.info(f"Paragraph labeling results: {labels}")
     except Exception as e:
-        logger.error(f"TopicLabelerChain | Failed to label topic: {e}")
+        logger.error(f"ParagraphLabelerChain | Failed to label topic: {e}")
         raise
 
     labeled_paragraphs = group_paragraphs_by_labels(paragraphs, responses.labels)
@@ -162,8 +162,20 @@ def extract_scientific_content(state: CircularState) -> Dict[str, Any]:
         logger.warning("ScientificContent paragraph is empty or missing.")
         return {"pending_labels": updated_pending}
 
+    # Label using LLM
+    try:  
+        label_chain = ReportLabelerChain()
+        label_responses: ReportLabel = label_chain.invoke({"content": paragraph})
+        label = label_responses.label
+        logger.info(f"Primary Label: {label}")
+    except Exception as e:
+        logger.error(f"ReportLabelerChain | Failed to label topic: {e}")
+        raise
+
+    # number using LLM
+
     # --- Placeholder Extraction Logic ---
-    extracted_info = {"scientific_content_sample": "example"}
+    extracted_info = {"intent": label}
     logger.debug("Successfully extracted information: %s", extracted_info)
 
     # Update extracted dataset
@@ -189,12 +201,13 @@ def retain_original_text(state: CircularState) -> Dict[str, Any]:
     current_label = state.current_label
     updated_pending = state.pending_labels[1:]
 
-    paragraph = state.paragraphs.get(state.current_label, "")
+    paragraph = state.paragraphs.get(current_label, "")
     if not paragraph.strip():
         logger.warning(f"{current_label} paragraph is empty or missing.")
         return {"pending_labels": updated_pending}
 
-    extracted_info = {current_label.lower(): paragraph}
+    key = current_label[:1].lower() + current_label[1:]
+    extracted_info = {key: paragraph}
 
     # Update extracted dataset
     current_extracted = state.extracted_dset
@@ -233,7 +246,7 @@ def GCNExtractorAgent():
     # Router -> Extractor Nodes (Conditional)
     workflow.add_conditional_edges(
         "router_node",
-        lambda state: state.current_label,
+        lambda state: state.current_label if (state.current_label in ALLOWED_PARAGRAPH_LABELS or state.current_label == "end_loop") else "Unknown",
         {
             "HeaderInformation": "extract_header_information",
             "AuthorList": "extract_author_list",
@@ -243,8 +256,9 @@ def GCNExtractorAgent():
             "Acknowledgements": "retain_original_text",
             "CitationInstructions": "retain_original_text",
             "Correction": "retain_original_text",
-            "end_loop": END
-        }
+            "Unknown": "retain_original_text", 
+            "end_loop": END,
+        },
     )
     # Extractor Nodes -> Router (Loop back)
     workflow.add_edge("extract_header_information", "router_node")
