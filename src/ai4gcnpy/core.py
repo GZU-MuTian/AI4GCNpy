@@ -39,7 +39,7 @@ def _run_extraction(
         logger.error("pathlib.Path | %s", e)
         return {}
 
-    llm_config = {
+    llm_config: Dict[str, Any] = {
         "model": model,
         "model_provider": model_provider,
     }
