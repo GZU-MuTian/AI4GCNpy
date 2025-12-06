@@ -1,6 +1,6 @@
-from .chains import ParagraphLabelerChain, ParseAuthorshipChain, ReportLabelerChain, ALLOWED_PARAGRAPH_LABELS, ALLOWED_REPORT_LABELS
+from .chains import ParagraphLabelerChain, ParseAuthorshipChain, ReportLabelerChain, PhysicalQuantityExtractorChain, ALLOWED_PARAGRAPH_LABELS
+from .chains import ParagraphLabelList, AuthorList, ReportLabel, PhysicalQuantityCategory
 from .utils import split_text_into_paragraphs, group_paragraphs_by_labels, header_regex_match
-from .chains import ParagraphLabelList, AuthorList, ReportLabel
 
 from langgraph.graph import StateGraph, START, END
 
@@ -162,22 +162,26 @@ def extract_scientific_content(state: CircularState) -> Dict[str, Any]:
         logger.warning("ScientificContent paragraph is empty or missing.")
         return {"pending_labels": updated_pending}
 
+    extracted_info = {}
     # Label using LLM
     try:  
         label_chain = ReportLabelerChain()
         label_responses: ReportLabel = label_chain.invoke({"content": paragraph})
-        label = label_responses.label
-        logger.info(f"Primary Label: {label}")
+        extracted_info.update({"intent": label_responses.label})
     except Exception as e:
         logger.error(f"ReportLabelerChain | Failed to label topic: {e}")
         raise
 
-    # number using LLM
+    # extract using LLM
+    try:  
+        quantity_chain = PhysicalQuantityExtractorChain()
+        quantity_responses: PhysicalQuantityCategory = quantity_chain.invoke({"content": paragraph})
+        extracted_info.update(quantity_responses.model_dump())
+    except Exception as e:
+        logger.error(f"ReportLabelerChain | Failed to label topic: {e}")
+        raise
 
-    # --- Placeholder Extraction Logic ---
-    extracted_info = {"intent": label}
     logger.debug("Successfully extracted information: %s", extracted_info)
-
     # Update extracted dataset
     current_extracted = state.extracted_dset
     updated_extracted = {**current_extracted, **extracted_info}

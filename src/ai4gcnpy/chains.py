@@ -118,7 +118,7 @@ ALLOWED_REPORT_LABELS: Dict[str, str] = {
     "NEW_EVENT_DETECTION": "The circular reports the initial detection of a new astrophysical transient or event. This includes gamma-ray bursts (GRBs), gravitational wave events (GW), neutrino, supernovae, tidal disruption events (TDEs), fast radio bursts (FRBs), or other novel cosmic phenomena. Key indicators: 'detected', 'discovered', 'triggered', 'alert', 'first report', 'new source', or similar phrasing indicating novelty and first observation.",
     "FOLLOW_UP_OBSERVATION": "The circular presents observational results (imaging, spectroscopy, photometry, timing, etc.) of a previously reported astrophysical event. This includes confirmations, multi-wavelength coverage, light curves, or spectral analysis of known transients. It may also include marginal detections or non-detections (the latter particularly when accompanied by upper limits). Key indicators: 'follow-up', 'observation of [known event]', 'counterpart candidate', 'monitoring', 'light curve', 'spectrum'.",
     "NON_DETECTION_LIMIT": "The circular explicitly states that no counterpart or signal was found for a previously reported event and provides quantitative upper limits (e.g., magnitude limits, flux limits). It may be a standalone report or part of a broader follow-up observation. Key indicators: 'no detection', 'upper limit', 'limiting magnitude', 'flux limit', 'non-detection'.",
-    "ANALYSIS_REFINEMENT": "The circular refines, corrects, or improves upon earlier information about a known event. This includes updated sky localizations, revised redshifts, corrected error regions, improved classifications, or re-analyses using better calibration or methods. It may also include retractions of prior event parameters if the event is real but previously reported parameters were incorrect. Key indicators: 'refined position', 'updated localization', 'revised redshift', 'corrected coordinates', 'improved analysis', 're-analysis of', 'retraction of [parameter]'.",
+    "ANALYSIS_REFINEMENT": "The circular refines, corrects, or improves upon earlier information about a known event. This includes updated sky localizations, revised redshifts, corrected error regions, improved classifications, or re-analyses using better calibration or methods. It m2ay also include retractions of prior event parameters if the event is real but previously reported parameters were incorrect. Key indicators: 'refined position', 'updated localization', 'revised redshift', 'corrected coordinates', 'improved analysis', 're-analysis of', 'retraction of [parameter]'.",
     "CALL_FOR_FOLLOWUP": "The circular explicitly requests or encourages other observers or facilities to conduct additional observations of a specific event. This may include time-critical requests for spectroscopy, monitoring, or multi-messenger coverage. Key indicators: 'request follow-up', 'encourage observations', 'please observe', 'urgent follow-up needed', 'call for spectroscopic coverage'.",
     "NON_EVENT_REPORT": "The circular does not pertain to any real astrophysical event. This includes system tests, software simulations, hardware injections, observatory maintenance notices, scheduling updates, mailing list announcements, false alarm retractions due to instrumental artifacts, or administrative messages. Key indicators: 'test alert', 'simulation', 'injection', 'maintenance', 'scheduling notice', 'false trigger', 'no real event', 'administrative', 'this is a test'."
 }
@@ -168,14 +168,72 @@ def ReportLabelerChain():
 
 # --- ParameterExtractionChain ---
 
-class ParameterExtraction(BaseModel):
-    """
-    Represents a single extracted physical parameter from a scientific text.
-    """
-    parameter: str = Field(..., description="Name of the physical parameter (e.g., 'redshift')")
-    context: str = Field(
-        ...,
-        description="Contextual classification: 'detected', 'not detected', or 'inferred'"
-    )
-    supporting_text: str = Field(..., description="Original sentence or phrase supporting the extraction")
-    
+PHYSICAL_QUANTITY_CATEGORIES: Dict[str, str] = {
+  "position_and_coordinates": "Source location on the sky, associated uncertainties, and angular separations. Includes coordinates (RA, Dec, J2000), error regions, and offsets.",
+  "time_and_duration": "Timing of events or observations. Includes specific times (e.g., trigger T0), durations (e.g., T90), intervals, evolution indices, and timestamps (e.g., UTC, MJD).",
+  "flux_and_brightness": "Observed intensity or energy reception rate. Includes flux, count rate, fluence, magnitude.",
+  "spectrum_and_energy": "Photon/energy distribution vs. wavelength or energy, including spectral indices (photon/power-law index), characteristic energies (Ep, Epeak, cutoff), isotropic/rest-frame energies (Eiso), and energy bands.",
+  "observation_conditions_and_instrument": "Observation setup and environment. Includes wavelength band/filter, instrumental mode, exposure time, pointing, atmospheric conditions, and instrument characteristics.",
+  "distance_and_redshift": "Cosmological distance of the source. Primarily redshift, luminosity distance.",
+  "extinction_and_absorption": "Light attenuation due to intervening material. Includes dust extinction (e.g., E(B-V), Av) and gas absorption (e.g., NH).",
+  "statistical_significance_and_uncertainty": "Parameters quantifying the reliability, confidence, and precision of measurements. This includes: detection significance (sigma, SNR), p-values, false alarm rates, chi-squared statistics, and uncertainties with confidence levels.",
+  "upper_limit": "A special class of measurement indicating that the true value of a quantity is likely below a specified threshold with a given confidence. ALWAYS used in conjunction with a physical quantity from another category. Examples: 'flux upper limit', 'magnitude upper limit', 'fluence upper limit'. Specifies the sensitivity of a non-detection.",
+  "source_identification_and_characteristics": "Parameters describing the nature and environment of the astrophysical source itself. This includes: classification (GRB, GW event, neutrino candidate), association (optical/X-ray/radio counterpart), host galaxy information, and specific spectral features (emission/absorption lines like H-alpha, [OIII]) used for identification and analysis."
+}
+
+# Pre-format allowed categories for use in system prompt
+_allowed_categories_str = "\n".join(
+    f"- {cat}: {desc}" for cat, desc in PHYSICAL_QUANTITY_CATEGORIES.items()
+)
+
+class PhysicalQuantityCategory(BaseModel):
+    position_and_coordinates: Optional[List[str]] = Field(default=None)
+    time_and_duration: Optional[List[str]] = Field(default=None)
+    flux_and_brightness: Optional[List[str]] = Field(default=None)
+    spectrum_and_energy: Optional[List[str]] = Field(default=None)
+    observation_conditions_and_instrument: Optional[List[str]] = Field(default=None)
+    distance_and_redshift: Optional[List[str]] = Field(default=None)
+    extinction_and_absorption: Optional[List[str]] = Field(default=None)
+    statistical_significance_and_uncertainty: Optional[List[str]] = Field(default=None)
+    upper_limit: Optional[List[str]] = Field(default=None)
+    source_identification_and_characteristics: Optional[List[str]] = Field(default=None)
+
+
+# Parser for the output
+quantity_parser = PydanticOutputParser(pydantic_object=PhysicalQuantityCategory)
+
+# System prompt for the LLM
+_SYSTEM_QUANTITY_EXTRACTION_PROMPT = """
+You are an expert astronomer analyzing NASA GCN Circulars.
+Your task is to identify and extract specific sentences from the text that contain information about the following physical quantity categories.
+
+**Categories to Extract:**
+{allowed_categories}
+
+**Task Instructions:**
+1. **Identify Sentences**: Read the input text carefully and find sentences that contain information relevant to any of the categories above.
+2. **One Category per Sentence**: For each identified sentence, assign it to ONLY ONE most appropriate category. If a sentence contains information about multiple categories, choose the primary one.
+3. **Extract Verbatim**: Copy the entire sentence exactly as it appears in the text. Do not paraphrase or modify the original wording.
+4. **Preserve Context**: Include the sentence exactly as it appears, even if it contains additional information not directly related to the category.
+
+{format_instructions}
+""".strip()
+
+# Human prompt for the LLM
+_HUMAN_QUANTITY_EXTRACTION_PROMPT = """
+GCN Circular text:
+{content}
+""".strip()
+
+# Create the prompt template
+QUANTITY_EXTRACTION_PROMPT = ChatPromptTemplate.from_messages([
+    ("system", _SYSTEM_QUANTITY_EXTRACTION_PROMPT),
+    ("human", _HUMAN_QUANTITY_EXTRACTION_PROMPT)
+]).partial(
+    allowed_categories=_allowed_categories_str,
+    format_instructions=quantity_parser.get_format_instructions()
+)
+
+def PhysicalQuantityExtractorChain():
+    llm = llm_client.getLLM()
+    return QUANTITY_EXTRACTION_PROMPT | llm | quantity_parser
