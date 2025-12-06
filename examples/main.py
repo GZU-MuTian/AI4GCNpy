@@ -1,46 +1,34 @@
-from ai4gcnpy.agents import GCNParserGraph, GCNState
+from ai4gcnpy import gcn_extractor
 
-from langchain_ollama import ChatOllama
-
+from rich.progress import track
 from pathlib import Path
-import random
-import logging
+import json
 
-logging.basicConfig(
-    level=logging.INFO, 
-    format='%(asctime)s - %(levelname)s: %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
-
-
-# Randomly select one file
 dir_path = Path("/home/yuliu/Downloads/archive.txt")
 txt_files = list(dir_path.glob("*.txt"))
-selected_file = random.choice(txt_files)
-logging.info("Randomly selected .txt file: %s", selected_file)
+# selected_file = random.choice(txt_files)
 
+processed_count: int = 0
+error_count: int = 0
 
-doc = Path(selected_file).read_text(encoding="utf-8")
+output_dir = Path("/home/yuliu/Downloads/gcn_results")
+output_dir.mkdir(parents=True, exist_ok=True)
+error_log = output_dir / "gcn_errors.log"
+for idx, file in enumerate(track(txt_files, description="Processing...", transient=True), start=1):
+    # if idx % 20 == 0:
+    #     continue
+    try:
+        result = gcn_extractor(file, model="deepseek-r1:8b", model_provider="ollama")
 
-llm = ChatOllama(
-    model="qwen3:8b",
-    temperature=1,
-    reasoning=True,
-    validate_model_on_init=True
-)
+        # Write result as JSON
+        output_file = output_dir / f"{file.stem}.json"
+        with open(output_file, "w", encoding="utf-8") as f:
+            json.dump(result, f, indent=2, ensure_ascii=False)
+        processed_count += 1
+    except Exception as e:
+        error_count += 1
+        error_msg: str = f"Failed to process {file}: {str(e)}"
+        with open(error_log, "a", encoding="utf-8") as log_f:
+            log_f.write(f"{error_msg}\n")
 
-initial_input = GCNState(
-    raw_text=doc,
-)
-
-app = GCNParserGraph(llm=llm).compile()
-
-
-final_state_dict = app.invoke(input=initial_input.model_dump())
-
-grouped_paragraphs = final_state_dict.get("grouped_paragraphs", "")
-for tag, merged_text in grouped_paragraphs.items():
-    print(f"\n--- Tags: {tag} ---")
-    print(merged_text)
-
-print(final_state_dict.get("extracted_data", ""))
+print(f"Processing complete: {processed_count} succeeded, {error_count} failed. ")
