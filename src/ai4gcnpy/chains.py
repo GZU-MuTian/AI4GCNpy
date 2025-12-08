@@ -212,11 +212,11 @@ Your task is to identify and extract specific sentences from the text that conta
 
 **Task Instructions:**
 1. Identify Sentences: Read the input text carefully and find all sentences that contain information relevant to any of the predefined categories.
-2. One Category per Sentence: For each identified sentence, assign it to the ONLY ONE most specific and appropriate category. If a sentence contains information pertinent to multiple categories, identify its primary purpose and assign it only to the category that best reflects that purpose. Do not duplicate the sentence across categories.
+2. One Category per Sentence: For each identified sentence, assign it to the ONLY ONE most specific and appropriate category. If a sentence contains information pertinent to multiple categories, identify its primary purpose and assign it only to the category that best reflects that purpose. **Do not duplicate the sentence across categories**.
 3. Extract Verbatim: Copy the entire sentence exactly as it appears in the text. Do not paraphrase or modify the original wording.
 4. Preserve Context: Do not truncate sentences. If the relevant information is embedded within a longer sentence, extract the full sentence. Its additional context is valuable for verification.
 5. Handle Complex Sentences: If a sentence is a list joined by semicolons (;) or conjunctions (e.g., “and”, “also”), and each independent clause clearly addresses a different, distinct category, you may split it into separate entries.
-
+6. Your output MUST be valid JSON that strictly adheres to the structure specified below.
 {format_instructions}
 """.strip()
 
