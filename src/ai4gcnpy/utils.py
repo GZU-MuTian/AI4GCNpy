@@ -1,5 +1,5 @@
 import re
-from typing import List, Dict, Tuple, Any, Optional
+from typing import List, Dict, Tuple, Any, Optional, LiteralString
 import logging
 from datetime import date
 
@@ -94,7 +94,7 @@ def header_regex_match(header: str) -> Dict[str, Any]:
     }
 
 
-def build_cypher_statements(data: Dict[str, Any]) -> List[Tuple[str, Dict[str, Any]]]:
+def build_cypher_statements(data: Dict[str, Any]) -> List[Tuple[LiteralString, Dict[str, Any]]]:
     """
     Generate a list of (Cypher query, parameters) tuples from validated circular data.
 
@@ -104,22 +104,22 @@ def build_cypher_statements(data: Dict[str, Any]) -> List[Tuple[str, Dict[str, A
     Returns:
         List[Tuple[str, Dict[str, Any]]]: List of executable Cypher statement-parameter pairs.
     """
-    statements: List[Tuple[str, Dict[str, Any]]] = []
+    statements: List[Tuple[LiteralString, Dict[str, Any]]] = []
 
     dset: dict = data.get("extracted_dset", {})
 
     # 1. Create CIRCULAR node
     circular_node = """
-    CREATE (c:CIRCULAR {
-      circularId: $circularId,
-      subject: $subject,
-      createdOn: $createdOn,
-      submitter: $submitter,
-      email: $email,
-      rawText: $rawText,
-      ingestedBy: $ingestedBy,
-      ingestedAt: $ingestedAt
-    })
+        CREATE (c:CIRCULAR {
+            circularId: $circularId,
+            subject: $subject,
+            createdOn: $createdOn,
+            submitter: $submitter,
+            email: $email,
+            rawText: $rawText,
+            ingestedBy: $ingestedBy,
+            ingestedAt: $ingestedAt
+        })
     """
     circular_para = {
         "circularId": dset.get("circularId"),
@@ -134,44 +134,55 @@ def build_cypher_statements(data: Dict[str, Any]) -> List[Tuple[str, Dict[str, A
     statements.append((circular_node, circular_para))
 
     # 2. COLLABORATION（仅当 collaboration 非空）
-    # collaboration = d.get("collaboration")
-    # if collaboration:
-    #     q2 = """
-    #     MATCH (c:CIRCULAR {circularId: $circularId})
-    #     CREATE (collab:COLLABORATION {name: $collaborationName})
-    #     CREATE (c)-[:REPORT]->(collab)
-    #     """
-    #     p2 = {"circularId": circular_id, "collaborationName": collaboration}
-    #     statements.append((q2, p2))
+    collaboration = dset.get("collaboration", "")
+    if collaboration:
+        collab_node = """
+            MATCH (c:CIRCULAR {circularId: $circularId})
+            MERGE (collab:COLLABORATION {name: $collaborationName})
+            ON CREATE SET
+                collab.ingestedBy = $ingestedBy,
+                collab.ingestedAt = $ingestedAt
+            CREATE (collab)-[:REPORT {
+                ingestedBy: $ingestedBy,
+                ingestedAt: $ingestedAt
+            }]->(c)
+        """
+        collab_para = {
+            "circularId": dset.get("circularId"), 
+            "collaborationName": collaboration,
+            "ingestedBy": "AI4GCNpy",
+            "ingestedAt": date.today()
+        }
+        statements.append((collab_node, collab_para))
 
     # 3. AUTHORS（仅当 authors 存在且非空）
-    # authors_input = d.get("authors")
-    # if authors_input:
-    #     try:
-    #         authors_list = [
-    #             {"name": a["author"], "affiliation": a["affiliation"]}
-    #             for a in authors_input
-    #             if a.get("author") and a.get("affiliation")
-    #         ]
-    #         if authors_list:
-    #             q3 = """
-    #             MATCH (c:CIRCULAR {circularId: $circularId})
-    #             MATCH (collab:COLLABORATION {name: $collaborationName})
-    #             UNWIND $authors AS auth
-    #             MERGE (a:AUTHOR {name: auth.name})
-    #             MERGE (inst:INSTITUTION {name: auth.affiliation})
-    #             MERGE (a)-[:AFFILIATED_WITH]->(inst)
-    #             MERGE (a)-[:MEMBER_OF]->(collab)
-    #             MERGE (c)-[:HAS_AUTHOR]->(a)
-    #             """
-    #             p3 = {
-    #                 "circularId": circular_id,
-    #                 "collaborationName": collaboration or "",  # 即使无 collaboration 也允许（MERGE 不依赖）
-    #                 "authors": authors_list
-    #             }
-    #             statements.append((q3, p3))
-    #     except (TypeError, KeyError):
-    #         pass  # 忽略格式错误的 authors
+    authors = dset.get("authors", [])
+    if authors:
+        author_node = """
+            MATCH (c:CIRCULAR {circularId: $circularId})
+            OPTIONAL MATCH (collab:COLLABORATION {name: $collaborationName})
+            UNWIND $authors AS auth
+            MERGE (a:AUTHOR {
+                name: auth.author,
+                affiliation: auth.affiliation
+            })
+            ON CREATE SET
+                a.ingestedBy = $ingestedBy,
+                a.ingestedAt = $ingestedAt
+            FOREACH (_ IN CASE WHEN collab IS NOT NULL THEN [1] ELSE [] END |
+                MERGE (a)-[:MEMBER_OF]->(collab)
+            )
+            MERGE (c)-[:HAS_AUTHOR]->(a)
+        """
+        author_para = {
+            "circularId": dset.get("circularId"),
+            "collaborationName": collaboration,
+            "authors": authors,
+            "ingestedBy": "AI4GCNpy",
+            "ingestedAt": date.today()
+        }
+        statements.append((author_node, author_para))
+
 
     # 4. INTENT（仅当 intent 非空）
     # intent_type = d.get("intent")

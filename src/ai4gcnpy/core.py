@@ -71,7 +71,7 @@ def _run_extraction(
 def _run_builder(
     input_path: str,
     database: Optional[str] = None
-):
+) -> Dict[str, Any]:
     """
     Build a GCN knowledge graph in the specified database from one or more extraction result files.
 
@@ -79,6 +79,12 @@ def _run_builder(
         input_path: Path to a JSON file or a directory containing JSON files.
         database: Database identifier.
     """
+    # Initialize consistent return structure
+    count = {
+        "files_processed": 0,
+        "files_skipped": 0,
+    }
+
     try:
         path_obj = Path(input_path).resolve()
         
@@ -88,7 +94,7 @@ def _run_builder(
                 json_files: List[Path] = [path_obj]
             else:
                 logger.error(f"Input file is not a JSON file: {input_path}")
-                return None
+                return count
         elif path_obj.is_dir():
             json_files = sorted(path_obj.rglob("*.json"))
             logger.debug(f"Found {len(json_files)} JSON file(s) in: {input_path}")
@@ -96,10 +102,10 @@ def _run_builder(
                 logger.warning(f"No JSON files found in directory: {input_path}")
         else:
             logger.error(f"Path is neither a file nor a directory: {input_path}")
-            return None
+            return count
     except Exception as e:
         logger.exception(f"Error processing input path: {input_path}")
-        return None
+        return count
     
     # Ingest all files inside a database transaction
     graoh = GCNGraphDB()
@@ -110,16 +116,26 @@ def _run_builder(
                 raw_text = json_file.read_text(encoding="utf-8")
                 payload = json.loads(raw_text)
             except Exception as e:
+                count["files_skipped"] += 1
                 logger.error(f"Failed to read or parse JSON file {json_file}: {e}")
                 continue  # Skip malformed files
 
             if not payload:
+                count["files_skipped"] += 1
                 logger.debug(f"Empty payload in file: {json_file}, skipping.")
                 continue
-            cypher_statements = build_cypher_statements(payload)
-            for query, params in cypher_statements:
-                tx.run(query, params)
+
+            try:
+                cypher_statements = build_cypher_statements(payload)
+                for query, params in cypher_statements:
+                    tx.run(query, params)
+                count["files_processed"] += 1
+            except Exception as e:
+                count["files_skipped"] += 1
+                logger.error(f"Failed to generate/run Cypher for {json_file}: {e}")
+                continue
 
         logger.debug("All files processed successfully. Transaction committed.")
-
     graoh.close()
+
+    return count

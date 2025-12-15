@@ -100,9 +100,11 @@ def builder(
     """
     Main CLI entry point for building a GCN graph database.
     """
-    results = _run_builder(
+    count = _run_builder(
         input_path=input_path,
         database=database
     )
 
-    # Print summary statistics
+    # Display results using Rich
+    console.print(f"Files Processed: [green]{count["files_processed"]}[/green]")
+    console.print(f"Files Skipped: [yellow]{count["files_skipped"]}[/yellow]")

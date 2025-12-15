@@ -66,7 +66,7 @@ class GCNGraphDB:
         Yields:
             A Neo4j Session object scoped to the specified database.
         """
-        session_kwargs = {"database": database} if database else {}
+        session_kwargs: Dict[str, Any] = {"database": database} if database else {}
 
         with self._driver.session(**session_kwargs) as session:
             logger.debug(f"Opened Neo4j session on database '{database or '<default>'}'")
@@ -83,7 +83,7 @@ class GCNGraphDB:
         Yields:
             A Neo4j Transaction object scoped to the specified database.
         """
-        session_kwargs = {"database": database} if database else {}
+        session_kwargs: Dict[str, Any] = {"database": database} if database else {}
         db_name = database or "<default>"
 
         with self._driver.session(**session_kwargs) as session:
@@ -126,8 +126,8 @@ class GCNGraphDB:
             DELETE r
             RETURN count(r) AS rels
             """
-            rel_result = session.run(rel_query, create_by=create_by, created_at=target_date)
-            rels_deleted = rel_result.single()["rels"]
+            rel_record = session.run(rel_query, create_by=create_by, created_at=target_date).single()
+            rels_deleted = rel_record["rels"] if rel_record else 0
 
             # 2. Delete nodes
             node_query = """
@@ -136,8 +136,8 @@ class GCNGraphDB:
             DETACH DELETE n
             RETURN count(n) AS nodes
             """
-            node_result = session.run(node_query, create_by=create_by, created_at=target_date)
-            nodes_deleted = node_result.single()["nodes"]
+            node_record = session.run(node_query, create_by=create_by, created_at=target_date).single()
+            nodes_deleted = node_record["nodes"] if node_record else 0
 
         logger.info(
             f"Deleted {nodes_deleted} nodes and {rels_deleted} relationships created by {create_by} on {created_at}"
