@@ -1,6 +1,7 @@
 import re
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Tuple, Any, Optional
 import logging
+from datetime import date
 
 logger = logging.getLogger(__name__)
 
@@ -91,3 +92,128 @@ def header_regex_match(header: str) -> Dict[str, Any]:
         "submitter": submitter,
         "email": email
     }
+
+
+def build_cypher_statements(data: Dict[str, Any]) -> List[Tuple[str, Dict[str, Any]]]:
+    """
+    Generate a list of (Cypher query, parameters) tuples from validated circular data.
+
+    Args:
+        data (Dict[str, Any]): Validated input dictionary.
+
+    Returns:
+        List[Tuple[str, Dict[str, Any]]]: List of executable Cypher statement-parameter pairs.
+    """
+    statements: List[Tuple[str, Dict[str, Any]]] = []
+
+    dset: dict = data.get("extracted_dset", {})
+
+    # 1. Create CIRCULAR node
+    circular_node = """
+    CREATE (c:CIRCULAR {
+      circularId: $circularId,
+      subject: $subject,
+      createdOn: $createdOn,
+      submitter: $submitter,
+      email: $email,
+      rawText: $rawText,
+      ingestedBy: $ingestedBy,
+      ingestedAt: $ingestedAt
+    })
+    """
+    circular_para = {
+        "circularId": dset.get("circularId"),
+        "subject": dset.get("subject"),
+        "createdOn": dset.get("createdOn"),
+        "submitter": dset.get("submitter"),
+        "email": dset.get("email"),
+        "rawText": data.get("raw_text"),
+        "ingestedBy": "AI4GCNpy",
+        "ingestedAt": date.today()
+    }
+    statements.append((circular_node, circular_para))
+
+    # 2. COLLABORATION（仅当 collaboration 非空）
+    # collaboration = d.get("collaboration")
+    # if collaboration:
+    #     q2 = """
+    #     MATCH (c:CIRCULAR {circularId: $circularId})
+    #     CREATE (collab:COLLABORATION {name: $collaborationName})
+    #     CREATE (c)-[:REPORT]->(collab)
+    #     """
+    #     p2 = {"circularId": circular_id, "collaborationName": collaboration}
+    #     statements.append((q2, p2))
+
+    # 3. AUTHORS（仅当 authors 存在且非空）
+    # authors_input = d.get("authors")
+    # if authors_input:
+    #     try:
+    #         authors_list = [
+    #             {"name": a["author"], "affiliation": a["affiliation"]}
+    #             for a in authors_input
+    #             if a.get("author") and a.get("affiliation")
+    #         ]
+    #         if authors_list:
+    #             q3 = """
+    #             MATCH (c:CIRCULAR {circularId: $circularId})
+    #             MATCH (collab:COLLABORATION {name: $collaborationName})
+    #             UNWIND $authors AS auth
+    #             MERGE (a:AUTHOR {name: auth.name})
+    #             MERGE (inst:INSTITUTION {name: auth.affiliation})
+    #             MERGE (a)-[:AFFILIATED_WITH]->(inst)
+    #             MERGE (a)-[:MEMBER_OF]->(collab)
+    #             MERGE (c)-[:HAS_AUTHOR]->(a)
+    #             """
+    #             p3 = {
+    #                 "circularId": circular_id,
+    #                 "collaborationName": collaboration or "",  # 即使无 collaboration 也允许（MERGE 不依赖）
+    #                 "authors": authors_list
+    #             }
+    #             statements.append((q3, p3))
+    #     except (TypeError, KeyError):
+    #         pass  # 忽略格式错误的 authors
+
+    # 4. INTENT（仅当 intent 非空）
+    # intent_type = d.get("intent")
+    # if intent_type:
+    #     q4 = """
+    #     MATCH (c:CIRCULAR {circularId: $circularId})
+    #     CREATE (intent:INTENT {name: $intentType})
+    #     CREATE (c)-[:HAS_INTENT]->(intent)
+    #     """
+    #     p4 = {"circularId": circular_id, "intentType": intent_type}
+    #     statements.append((q4, p4))
+
+    # 5. PHYSICAL_QUANTITY（仅当至少一个物理量非 None）
+    # quantity_fields = [
+    #     "position_and_coordinates",
+    #     "time_and_duration",
+    #     "flux_and_brightness",
+    #     "spectrum_and_energy",
+    #     "observation_conditions_and_instrument",
+    #     "distance_and_redshift",
+    #     "extinction_and_absorption",
+    #     "statistical_significance_and_uncertainty",
+    #     "upper_limit",
+    #     "source_identification_and_characteristics"
+    # ]
+
+    # quantity_list = []
+    # for field in quantity_fields:
+    #     sentences = d.get(field)
+    #     if sentences is not None:  # 显式非 None（允许空列表，但通常不会）
+    #         quantity_list.append({"type": field, "sentences": sentences})
+
+    # if quantity_list:
+    #     q5 = """
+    #     MATCH (c:CIRCULAR {circularId: $circularId})
+    #     UNWIND $quantityList AS qty
+    #     FOREACH (_ IN CASE WHEN qty.sentences IS NOT NULL THEN [1] ELSE [] END |
+    #       CREATE (pq:PHYSICAL_QUANTITY {type: qty.type})
+    #       CREATE (c)-[:MENTIONS {sentences: qty.sentences}]->(pq)
+    #     )
+    #     """
+    #     p5 = {"circularId": circular_id, "quantityList": quantity_list}
+    #     statements.append((q5, p5))
+
+    return statements

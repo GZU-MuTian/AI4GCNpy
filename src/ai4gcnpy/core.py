@@ -1,8 +1,11 @@
 from . import llm_client
 from .agents import CircularState, GCNExtractorAgent
+from .db_client import GCNGraphDB
+from .utils import build_cypher_statements
 
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from pathlib import Path
+import json
 import logging
 from dotenv import load_dotenv
 
@@ -63,3 +66,60 @@ def _run_extraction(
         return {}
 
     return final_state
+
+
+def _run_builder(
+    input_path: str,
+    database: Optional[str] = None
+):
+    """
+    Build a GCN knowledge graph in the specified database from one or more extraction result files.
+
+    Args:
+        input_path: Path to a JSON file or a directory containing JSON files.
+        database: Database identifier.
+    """
+    try:
+        path_obj = Path(input_path).resolve()
+        
+        # Resolve to list of JSON files
+        if path_obj.is_file():
+            if path_obj.suffix.lower() == '.json':
+                json_files: List[Path] = [path_obj]
+            else:
+                logger.error(f"Input file is not a JSON file: {input_path}")
+                return None
+        elif path_obj.is_dir():
+            json_files = sorted(path_obj.rglob("*.json"))
+            logger.debug(f"Found {len(json_files)} JSON file(s) in: {input_path}")
+            if not json_files:
+                logger.warning(f"No JSON files found in directory: {input_path}")
+        else:
+            logger.error(f"Path is neither a file nor a directory: {input_path}")
+            return None
+    except Exception as e:
+        logger.exception(f"Error processing input path: {input_path}")
+        return None
+    
+    # Ingest all files inside a database transaction
+    graoh = GCNGraphDB()
+    with graoh.transaction(database) as tx:
+        for json_file in json_files:
+            logger.debug(f"Processing file: {json_file}")
+            try:
+                raw_text = json_file.read_text(encoding="utf-8")
+                payload = json.loads(raw_text)
+            except Exception as e:
+                logger.error(f"Failed to read or parse JSON file {json_file}: {e}")
+                continue  # Skip malformed files
+
+            if not payload:
+                logger.debug(f"Empty payload in file: {json_file}, skipping.")
+                continue
+            cypher_statements = build_cypher_statements(payload)
+            for query, params in cypher_statements:
+                tx.run(query, params)
+
+        logger.debug("All files processed successfully. Transaction committed.")
+
+    graoh.close()

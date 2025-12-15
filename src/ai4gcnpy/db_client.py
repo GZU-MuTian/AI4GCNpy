@@ -2,11 +2,11 @@
 A well-structured Neo4j graph database client for GCN circular data ingestion.
 Supports safe deletion (only deletes nodes created by this program) and batch operations.
 """
-from neo4j import Driver, GraphDatabase, Auth
+from neo4j import Driver, Session, GraphDatabase, Auth, Transaction, Result
 from neo4j_graphrag.schema import get_schema
 from contextlib import contextmanager
-from typing import Optional, Dict, Any
-from datetime import datetime
+from typing import Optional, Dict, Any, Generator
+from datetime import datetime, date
 from dotenv import load_dotenv
 import logging
 import os
@@ -25,7 +25,7 @@ class GCNGraphDB:
         url: Optional[str] = None,
         username: Optional[str] = None,
         password: Optional[str] = None,
-        driver_config: Optional[Dict[str, Any]] = None  
+        driver_config: Dict[str, Any] = {}  
     ):
         """
         Initialize Neo4j driver with flexible configuration.
@@ -37,8 +37,6 @@ class GCNGraphDB:
             driver_config: Additional config passed to GraphDatabase.driver().
         """
         self.url = url or os.getenv("NEO4J_URI", "neo4j://localhost:7687")
-        self.driver_config = driver_config or {}
-        self._create_by = "ai4gcnpy"
 
         # Build auth tuple safely
         auth = Auth(
@@ -49,59 +47,99 @@ class GCNGraphDB:
 
         try:
             self._driver: Driver = GraphDatabase.driver(
-                self.url, auth=auth, **self.driver_config
+                self.url, auth=auth, **driver_config
             )
-            # Verify connectivity
+            # Verify connectivity 
             self._driver.verify_connectivity()
-            logger.info(f"Successfully connected to Neo4j at '{self.url}'")
+            logger.debug(f"Successfully connected to Neo4j at '{self.url}'")
         except Exception as e:
             raise ValueError(f"Failed to connect to Neo4j: {e}") from e
 
-    def close(self) -> None:
-        """Close the underlying Neo4j driver."""
-        if hasattr(self, '_driver') and self._driver:
-            self._driver.close()
-            logger.info("Neo4j driver closed.")
+    @contextmanager
+    def session(self, database: Optional[str] = None) -> Generator[Session, None, None]:
+        """
+        Context manager for Neo4j session with optional database selection.
 
-    def get_schema(self) -> str:
+        Args:
+            database: Optional name of the target Neo4j database. If not provided, uses the default database.
+
+        Yields:
+            A Neo4j Session object scoped to the specified database.
+        """
+        session_kwargs = {"database": database} if database else {}
+
+        with self._driver.session(**session_kwargs) as session:
+            logger.debug(f"Opened Neo4j session on database '{database or '<default>'}'")
+            yield session
+
+    @contextmanager
+    def transaction(self, database: Optional[str] = None) -> Generator[Transaction, None, None]:
+        """
+        Context manager for Neo4j transaction with optional database selection.
+
+        Args:
+            database: Optional name of the target Neo4j database. If not provided, uses the default database.
+
+        Yields:
+            A Neo4j Transaction object scoped to the specified database.
+        """
+        session_kwargs = {"database": database} if database else {}
+        db_name = database or "<default>"
+
+        with self._driver.session(**session_kwargs) as session:
+            logger.debug(f"Opened Neo4j session on database '{db_name}'")
+            with session.begin_transaction() as tx:
+                logger.debug(f"Started Neo4j transaction on database '{db_name}'")
+                yield tx
+            logger.debug(f"CloseOperation: Transaction ended on database: '{db_name}'")
+        logger.debug(f"CloseOperation: Session closed for database: '{db_name}'")
+
+    def get_schema(self, database: Optional[str] = None) -> str:
         try:
-            schema_str = get_schema(self._driver)
+            schema_str = get_schema(self._driver, database=database)
             logger.debug("Retrieved schema via neo4j_graphrag.schema.get_schema")
             return schema_str
         except Exception as e:
             logger.error(f"Failed to retrieve schema using neo4j_graphrag: {e}")
             return ""
 
-    def delete_all(self, created_at: str) -> None:
+    def close(self) -> None:
+        """Close the underlying Neo4j driver."""
+        if hasattr(self, '_driver') and self._driver:
+            self._driver.close()
+            logger.debug("Neo4j driver closed.")
+
+    def delete_all(self, created_at: str, create_by: str = "AI4GCNpy", database: Optional[str] = None) -> None:
         """
         Delete nodes and relationships created by this client on a specific date.
 
         Args:
             created_at: Date string in 'YYYY-MM-DD' format.
         """
-        with self._driver.session() as session:
+        target_date = date.fromisoformat(created_at)
+
+        with self.session() as session:
             # 1. Delete relationships first
             rel_query = """
             MATCH ()-[r]-()
-            WHERE r.create_by = $create_by AND r.created_at = $date
+            WHERE r.ingestedBy = $create_by AND date(r.ingestedAt) = $created_at
             DELETE r
             RETURN count(r) AS rels
             """
-            rel_result = session.run(rel_query, create_by=self._create_by, date=created_at)
-            # rels_deleted = rel_result.single()["rels"]
+            rel_result = session.run(rel_query, create_by=create_by, created_at=target_date)
+            rels_deleted = rel_result.single()["rels"]
 
             # 2. Delete nodes
             node_query = """
             MATCH (n)
-            WHERE n.create_by = $create_by AND n.created_at = $date
+            WHERE n.ingestedBy = $create_by AND date(n.ingestedAt) = $created_at
             DETACH DELETE n
             RETURN count(n) AS nodes
             """
-            node_result = session.run(node_query, create_by=self._create_by, date=created_at)
-            # nodes_deleted = node_result.single()["nodes"]
+            node_result = session.run(node_query, create_by=create_by, created_at=target_date)
+            nodes_deleted = node_result.single()["nodes"]
 
-        # logger.info(f"Deleted {nodes_deleted} nodes and {rels_deleted} relationships created by {self._create_by} on {created_at}")
-
-
-    # WRITE OPERATIONS
+        logger.info(
+            f"Deleted {nodes_deleted} nodes and {rels_deleted} relationships created by {create_by} on {created_at}"
+        )
 

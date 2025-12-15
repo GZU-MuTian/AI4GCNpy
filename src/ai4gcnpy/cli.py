@@ -1,4 +1,4 @@
-from .core import _run_extraction
+from .core import _run_extraction, _run_builder
 
 from typing import Optional, Literal
 import typer
@@ -92,3 +92,17 @@ def extractor(
         title="Extraction Result", 
     ))
 
+@app.command(help="Build a GCN knowledge graph from structured extraction results.")
+def builder(
+    input_path: str = typer.Argument(..., help="Path to JSON file with extracted GCN entities."),
+    database: str = typer.Option("neo4j", "--database", "-d", help="Neo4j database name."),
+) -> None:
+    """
+    Main CLI entry point for building a GCN graph database.
+    """
+    results = _run_builder(
+        input_path=input_path,
+        database=database
+    )
+
+    # Print summary statistics
