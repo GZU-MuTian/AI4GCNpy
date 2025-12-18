@@ -108,7 +108,7 @@ def build_cypher_statements(data: Dict[str, Any]) -> List[Tuple[LiteralString, D
 
     dset: dict = data.get("extracted_dset", {})
 
-    # 1. Create CIRCULAR node
+    # 1. Handle CIRCULAR node
     circular_node = """
         CREATE (c:CIRCULAR {
             circularId: $circularId,
@@ -133,9 +133,9 @@ def build_cypher_statements(data: Dict[str, Any]) -> List[Tuple[LiteralString, D
     }
     statements.append((circular_node, circular_para))
 
-    # 2. COLLABORATION（仅当 collaboration 非空）
-    collaboration = dset.get("collaboration", "")
-    if collaboration:
+    # --- Handle COLLABORATION node (if collaboration is non-empty) ---
+    collaboration: str = dset.get("collaboration", "")
+    if collaboration and collaboration.lower() != "null":
         collab_node = """
             MATCH (c:CIRCULAR {circularId: $circularId})
             MERGE (collab:COLLABORATION {name: $collaborationName})
@@ -155,7 +155,7 @@ def build_cypher_statements(data: Dict[str, Any]) -> List[Tuple[LiteralString, D
         }
         statements.append((collab_node, collab_para))
 
-    # 3. AUTHORS（仅当 authors 存在且非空）
+    # --- Handle AUTHOR node (if AUTHOR is non-empty) ---
     authors = dset.get("authors", [])
     if authors:
         author_node = """
@@ -184,47 +184,87 @@ def build_cypher_statements(data: Dict[str, Any]) -> List[Tuple[LiteralString, D
         statements.append((author_node, author_para))
 
 
-    # 4. INTENT（仅当 intent 非空）
-    # intent_type = d.get("intent")
-    # if intent_type:
-    #     q4 = """
-    #     MATCH (c:CIRCULAR {circularId: $circularId})
-    #     CREATE (intent:INTENT {name: $intentType})
-    #     CREATE (c)-[:HAS_INTENT]->(intent)
-    #     """
-    #     p4 = {"circularId": circular_id, "intentType": intent_type}
-    #     statements.append((q4, p4))
+    # --- Handle INTENT node (if intent is non-empty) ---
+    intent_type = dset.get("intent")
+    if intent_type:
+        intent_node = """
+        MATCH (c:CIRCULAR {circularId: $circularId})
+        MERGE (intent:INTENT {name: $intentType})
+        CREATE (c)-[:HAS_INTENT {
+            ingestedBy: $ingestedBy,
+            ingestedAt: $ingestedAt
+        }]->(intent)
+        """
+        intent_para = {
+            "circularId": dset.get("circularId"), 
+            "intentType": intent_type,
+            "ingestedBy": "AI4GCNpy",
+            "ingestedAt": date.today()
+        }
+        statements.append((intent_node, intent_para))
 
-    # 5. PHYSICAL_QUANTITY（仅当至少一个物理量非 None）
-    # quantity_fields = [
-    #     "position_and_coordinates",
-    #     "time_and_duration",
-    #     "flux_and_brightness",
-    #     "spectrum_and_energy",
-    #     "observation_conditions_and_instrument",
-    #     "distance_and_redshift",
-    #     "extinction_and_absorption",
-    #     "statistical_significance_and_uncertainty",
-    #     "upper_limit",
-    #     "source_identification_and_characteristics"
-    # ]
+    # --- Handle PHYSICAL_QUANTITY node (if intent is non-empty) ---
+    for field in [
+        "position_and_coordinates",
+        "time_and_duration",
+        "flux_and_brightness",
+        "spectrum_and_energy",
+        "observation_conditions_and_instrument",
+        "distance_and_redshift",
+        "extinction_and_absorption",
+        "statistical_significance_and_uncertainty",
+        "upper_limit",
+        "source_identification_and_characteristics"
+    ]:
+        sentences = dset.get(field)
+        if not sentences:
+            continue
+        physical_quantity_node = """
+            MATCH (c:CIRCULAR {circularId: $circularId})
+            MERGE (pq:PHYSICAL_QUANTITY {name: $quantityName})
+            MERGE (c)-[:HAS_PHYSICAL_QUANTITY {
+                sentences: $sentences,
+                ingestedBy: $ingestedBy,
+                ingestedAt: $ingestedAt
+            }]->(pq)
+        """
+        physical_quantity_para = {
+            "circularId": dset.get("circularId"),
+            "quantityName": field,
+            "sentences": sentences,
+            "ingestedBy": "AI4GCNpy",
+            "ingestedAt": date.today()
+        }
+        statements.append((physical_quantity_node, physical_quantity_para))
 
-    # quantity_list = []
-    # for field in quantity_fields:
-    #     sentences = d.get(field)
-    #     if sentences is not None:  # 显式非 None（允许空列表，但通常不会）
-    #         quantity_list.append({"type": field, "sentences": sentences})
-
-    # if quantity_list:
-    #     q5 = """
-    #     MATCH (c:CIRCULAR {circularId: $circularId})
-    #     UNWIND $quantityList AS qty
-    #     FOREACH (_ IN CASE WHEN qty.sentences IS NOT NULL THEN [1] ELSE [] END |
-    #       CREATE (pq:PHYSICAL_QUANTITY {type: qty.type})
-    #       CREATE (c)-[:MENTIONS {sentences: qty.sentences}]->(pq)
-    #     )
-    #     """
-    #     p5 = {"circularId": circular_id, "quantityList": quantity_list}
-    #     statements.append((q5, p5))
+    # --- Handle METADATA node (if intent is non-empty) ---
+    for field in [
+        "externalLinks",
+        "contactInformation",
+        "acknowledgements",
+        "citationInstructions",
+        "correction",
+        "unknown"
+    ]:
+        sentences = dset.get(field)
+        if not sentences:
+            continue
+        metadata_node = """
+            MATCH (c:CIRCULAR {circularId: $circularId})
+            MERGE (m:METADATA {type: $metadateType})
+            MERGE (c)-[:HAS_METADATA {
+                sentences: $sentences,
+                ingestedBy: $ingestedBy,
+                ingestedAt: $ingestedAt
+            }]->(m)
+        """
+        metadata_para = {
+            "circularId": dset.get("circularId"),
+            "metadateType": field,
+            "sentences": sentences,
+            "ingestedBy": "AI4GCNpy",
+            "ingestedAt": date.today()
+        }
+        statements.append((metadata_node, metadata_para))
 
     return statements

@@ -1,11 +1,13 @@
 from .core import _run_extraction, _run_builder
 
-from typing import Optional, Literal
+from typing import Optional, Literal, List
 import typer
 from rich.console import Console
 from rich.logging import RichHandler
 from rich.panel import Panel
 from rich.json import JSON
+from rich.progress import track
+from pathlib import Path
 import logging
 import logging.config
 
@@ -94,17 +96,36 @@ def extractor(
 
 @app.command(help="Build a GCN knowledge graph from structured extraction results.")
 def builder(
-    input_path: str = typer.Argument(..., help="Path to JSON file with extracted GCN entities."),
+    input_path: str = typer.Argument(..., help="Path to a JSON file or a directory containing JSON files."),
     database: str = typer.Option("neo4j", "--database", "-d", help="Neo4j database name."),
 ) -> None:
     """
     Main CLI entry point for building a GCN graph database.
     """
-    count = _run_builder(
-        input_path=input_path,
-        database=database
-    )
+    try:
+        path_obj = Path(input_path).resolve()
+        # Resolve to list of JSON files
+        if path_obj.is_file():
+            if path_obj.suffix.lower() == '.json':
+                json_files: List[Path] = [path_obj]
+            else:
+                logger.error(f"Input file is not a JSON file: {input_path}")
+        elif path_obj.is_dir():
+            json_files = sorted(path_obj.rglob("*.json"))
+            logger.debug(f"Found {len(json_files)} JSON file(s) in: {input_path}")
+            if not json_files:
+                logger.warning(f"No JSON files found in directory: {input_path}")
+        else:
+            logger.error(f"Path is neither a file nor a directory: {input_path}")
+    except Exception as e:
+        logger.exception(f"Error processing input path: {input_path}: {e}")
+
+    files_processed = 0
+    for json_file in track(json_files, description="Processing files...", transient=True):
+        if _run_builder(json_file=json_file.as_posix(), database=database):
+            files_processed += 1
+        else:
+            logger.warning(f"Skipped or failed processing: {json_file}")
 
     # Display results using Rich
-    console.print(f"Files Processed: [green]{count["files_processed"]}[/green]")
-    console.print(f"Files Skipped: [yellow]{count["files_skipped"]}[/yellow]")
+    console.print(f"Files Processed: {files_processed}/{len(json_files)}")
