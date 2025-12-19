@@ -101,3 +101,24 @@ def _run_builder(
             return False
     graoh.close()
     return True
+
+def _run_graphrag(
+    query_text: str,
+    database: Optional[str] = None,    
+) -> str:
+    """
+    Process a user query against the knowledge graph database.
+    
+    Args:
+        query_text: The natural language query from the user.
+        database: The target database name (default: 'neo4j').
+        
+    Returns:
+        str: Contains the generated answer and optional context.
+    """
+    # Input validation
+    if not query_text.strip():
+        raise ValueError("Query text cannot be empty or whitespace-only")
+    
+
+    return "**test**\n\n---\n\n detail"

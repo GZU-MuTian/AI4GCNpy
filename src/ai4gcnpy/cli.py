@@ -1,4 +1,4 @@
-from .core import _run_extraction, _run_builder
+from .core import _run_extraction, _run_builder, _run_graphrag
 
 from typing import Optional, Literal, List
 import typer
@@ -6,6 +6,7 @@ from rich.console import Console
 from rich.logging import RichHandler
 from rich.panel import Panel
 from rich.json import JSON
+from rich.markdown import Markdown
 from rich.progress import track
 from pathlib import Path
 import logging
@@ -129,3 +130,22 @@ def builder(
 
     # Display results using Rich
     console.print(f"Files Processed: {files_processed}/{len(json_files)}")
+
+
+@app.command(help="Query the GraphRAG knowledge graph for natural language answers.")
+def query(
+    query_text: str = typer.Argument(..., help="The user's query text to process."),
+    database: str = typer.Option("neo4j", "--database", "-d", help="Target database name (default: neo4j).")
+) -> None:
+    """
+    Main CLI entry point for execute GraphRAG queries against the knowledge graph.
+    """
+    try:
+        response = _run_graphrag(query_text, database)
+    except Exception as e:
+        logger.error("Query command failed: %s", str(e))
+
+    console.print(Panel(
+        Markdown(response),
+        title="GraphRAG Answer", 
+    ))

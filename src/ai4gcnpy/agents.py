@@ -271,3 +271,26 @@ def GCNExtractorAgent():
     workflow.add_edge("retain_original_text", "router_node")
 
     return workflow.compile()
+
+
+
+# --- State Definition ---
+
+# class RAGState(BaseModel):
+#     query: str = Field(..., description="")
+#     retrieved_chunks
+#     response: 
+#     extracted_dset: Dict[str, Any] = Field(default_factory=dict, description="Dict storing extracted circular information.")
+#     current_label: str = Field(default="end_loop", description="The label currently being processed.")
+
+
+# --- Node Functions ---
+
+
+
+
+# --- Graph Construction ---
+
+# def GraphRAG():
+#     pass
+#     workflow.add_node("generate_response", self._generate_response_node)

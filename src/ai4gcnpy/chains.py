@@ -238,3 +238,8 @@ QUANTITY_EXTRACTION_PROMPT = ChatPromptTemplate.from_messages([
 def PhysicalQuantityExtractorChain():
     llm = llm_client.getLLM()
     return QUANTITY_EXTRACTION_PROMPT | llm | quantity_parser
+
+
+
+def GraphCypherQAChain():
+    pass
