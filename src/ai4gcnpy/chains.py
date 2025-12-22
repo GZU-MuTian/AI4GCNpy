@@ -1,7 +1,8 @@
 from . import llm_client
 
+from langchain_core.runnables import Runnable
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_core.output_parsers import PydanticOutputParser
+from langchain_core.output_parsers import PydanticOutputParser, StrOutputParser
 
 from pydantic import BaseModel, Field
 from typing import Dict, List, Literal, Optional, Union
@@ -240,6 +241,158 @@ def PhysicalQuantityExtractorChain():
     return QUANTITY_EXTRACTION_PROMPT | llm | quantity_parser
 
 
+# --- GuardrailsChain ---
 
-def GraphCypherQAChain():
-    pass
+class GuardrailsOutput(BaseModel):
+    decision: Literal["gcn", "end"] = Field(
+        description="Decision on whether the question is related to NASA's General Coordinates Network (GCN)"
+    )
+
+_HUMAN_CYPHER_TEMPLATE = """
+The question is:
+{question}
+"""
+
+_SYSTEM_GUARDRAIL_TEMPLATE = """
+You are a routing agent for a specialized AI system that answers questions ONLY about NASA's General Coordinates Network (GCN).
+
+# Domain Knowledge
+The GCN distributes real-time alerts and follow-up information about:
+- Gamma-ray bursts (GRBs)
+- Gravitational wave events (e.g., from LIGO/Virgo)
+- Neutrino alerts (e.g., from IceCube)
+- Multi-messenger astrophysical transients
+- Space missions like Fermi, Swift, INTEGRAL, Chandra
+- GCN Notices, Circulars, and related astronomical data
+
+# Neo4j Database Schema Context
+{schema}
+
+# Routing Logic
+Determine if the user's question is about:
+1. GCN domain knowledge (as described above)
+2. Data stored in the Neo4j schema (nodes/relationships mentioned above)
+
+Your task: Decide if the user's question can be answered using this GCN-focused knowledge graph.
+
+If YES → output "gcn"
+If NO → output "end"
+
+Provide only the specified output: "gcn" or "end".
+"""
+
+GUARDRAIL_PROMPT = ChatPromptTemplate.from_messages([
+    ("system", _SYSTEM_GUARDRAIL_TEMPLATE),
+    ("human", _HUMAN_CYPHER_TEMPLATE)
+])
+
+def GuardrailsChain():
+    llm = llm_client.getLLM()
+    return GUARDRAIL_PROMPT | llm.with_structured_output(GuardrailsOutput)
+
+# --- CypherChain ---
+
+_SYSTEM_CYPHER_TEMPLATE = """
+You are a Neo4j expert.
+Task: Generate a Cypher statement for querying a Neo4j graph database from a user input.
+
+Use only the provided relationship types and properties in the schema:
+{schema}
+
+Note: 
+Do not include any explanations or apologies in your responses.
+Do not use any properties or relationships not included in the schema.
+Do not respond to any questions that might ask anything else than for you to construct a Cypher statement.
+Do not include any text except the generated Cypher statement.
+Do not include triple backticks ``` or any additional text except the generated Cypher statement in your response.
+"""
+
+CYPHER_PROMPT = ChatPromptTemplate.from_messages([
+    ("system", _SYSTEM_CYPHER_TEMPLATE),
+    ("human", _HUMAN_CYPHER_TEMPLATE)
+])
+
+
+def Text2CypherChain():
+    llm = llm_client.getLLM()
+    return CYPHER_PROMPT | llm | StrOutputParser()
+
+# --- ValidateCypherChain ---
+
+_SYSTEM_VALIDATE_CYPHER_TEMPLATE = """
+You are a Cypher expert reviewing a statement written by a junior developer.
+"""
+
+_HUMAN_VALIDATE_CYPHER_TEMPLATE = """
+You must check the following:
+* Are there any syntax errors in the Cypher statement?
+* Are there any missing or undefined variables in the Cypher statement?
+* Are any node labels missing from the schema?
+* Are any relationship types missing from the schema?
+* Are any of the properties not included in the schema?
+* Does the Cypher statement include enough information to answer the question?
+
+Examples of good errors:
+* Label (:Foo) does not exist, did you mean (:Bar)?
+* Property bar does not exist for label Foo, did you mean baz?
+* Relationship FOO does not exist, did you mean FOO_BAR?
+
+Schema:
+{schema}
+
+The question is:
+{question}
+
+The Cypher statement is:
+{cypher}
+
+Make sure you don't make any mistakes!
+"""
+
+VALIDATE_CYPHER_PROMPT = ChatPromptTemplate.from_messages([
+    ("system", _SYSTEM_VALIDATE_CYPHER_TEMPLATE),
+    ("human", _HUMAN_VALIDATE_CYPHER_TEMPLATE)
+])
+
+def ValidateCypherChain():
+    llm = llm_client.getLLM()
+    return VALIDATE_CYPHER_PROMPT | llm | StrOutputParser()
+
+# --- CorrectCypherChain ---
+
+_SYSTEM_CORRECT_CYPHER_PROMPT = """
+You are a Cypher expert reviewing a statement written by a junior developer. You need to correct the Cypher statement based on the provided errors. No pre-amble. Do not wrap the response in any backticks or anything else. Respond with a Cypher statement only!
+"""
+
+_HUMAN_CORRECT_CYPHER_PROMPT = """
+Check for invalid syntax or semantics and return a corrected Cypher statement.
+
+Schema:
+{schema}
+
+Note: Do not include any explanations or apologies in your responses.
+Do not wrap the response in any backticks or anything else.
+Respond with a Cypher statement only!
+
+Do not respond to any questions that might ask anything else than for you to construct a Cypher statement.
+
+The question is:
+{question}
+
+The Cypher statement is:
+{cypher}
+
+The errors are:
+{errors}
+
+Corrected Cypher statement: 
+"""
+
+CORRECT_CYPHER_PROMPT = ChatPromptTemplate.from_messages([
+    ("system", _SYSTEM_CORRECT_CYPHER_PROMPT),
+    ("human", _HUMAN_CORRECT_CYPHER_PROMPT)
+])
+
+def CorrectCypherChain():
+    llm = llm_client.getLLM()
+    return CORRECT_CYPHER_PROMPT | llm | StrOutputParser()

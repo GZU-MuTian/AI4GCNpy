@@ -1,5 +1,5 @@
 from . import llm_client
-from .agents import CircularState, GCNExtractorAgent
+from .agents import CircularState, GraphQAState, GCNExtractorAgent, GraphQAAgent
 from .db_client import GCNGraphDB
 from .utils import build_cypher_statements
 
@@ -90,8 +90,8 @@ def _run_builder(
         logger.debug(f"Empty payload in file: {json_file}, skipping.")
         return False
 
-    graoh = GCNGraphDB()
-    with graoh.transaction(database) as tx:
+    graph = GCNGraphDB()
+    with graph.transaction(database) as tx:
         try:
             cypher_statements = build_cypher_statements(payload)
             for query, params in cypher_statements:
@@ -99,13 +99,21 @@ def _run_builder(
         except Exception as e:
             logger.error(f"Failed to generate/run Cypher for {json_file}: {e}")
             return False
-    graoh.close()
+    graph.close()
     return True
 
 def _run_graphrag(
     query_text: str,
+    model: str = "deepseek-chat",
+    model_provider: str = "deepseek",
+    temperature: Optional[float] = None,
+    max_tokens: Optional[int] = None,
+    reasoning: Optional[bool] = None,
+    url: Optional[str] = None,
+    username: Optional[str] = None,
+    password: Optional[str] = None,
     database: Optional[str] = None,    
-) -> str:
+) -> Dict[str, Any]:
     """
     Process a user query against the knowledge graph database.
     
@@ -119,6 +127,31 @@ def _run_graphrag(
     # Input validation
     if not query_text.strip():
         raise ValueError("Query text cannot be empty or whitespace-only")
-    
 
-    return "**test**\n\n---\n\n detail"
+    llm_config: Dict[str, Any] = {
+        "model": model,
+        "model_provider": model_provider,
+    }
+    if temperature is not None:
+        llm_config["temperature"] = temperature
+    if max_tokens is not None:
+        llm_config["max_tokens"] = max_tokens
+    if reasoning is not None:
+        llm_config["reasoning"] = reasoning
+    llm_client.basicConfig(**llm_config)
+
+    graph = GCNGraphDB(url=url, username=username, password=password)
+
+    try:
+        # Compile into a runnable app
+        app = GraphQAAgent()
+
+        # # Run the workflow
+        initial_state = GraphQAState(query=query_text, graph=graph, database=database)
+        final_state: dict = app.invoke(initial_state)
+    except Exception as e:
+        logger.error(f"GCNExtractorAgent execution failed: {e}")
+        return {}
+
+    graph.close()
+    return final_state

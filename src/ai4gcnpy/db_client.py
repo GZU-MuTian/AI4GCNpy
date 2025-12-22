@@ -96,7 +96,7 @@ class GCNGraphDB:
 
     def get_schema(self, database: Optional[str] = None) -> str:
         try:
-            schema_str = get_schema(self._driver, database=database)
+            schema_str = get_schema(self._driver, database=database, is_enhanced=True)
             logger.debug("Retrieved schema via neo4j_graphrag.schema.get_schema")
             return schema_str
         except Exception as e:

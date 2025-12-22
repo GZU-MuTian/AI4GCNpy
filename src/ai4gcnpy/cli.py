@@ -135,17 +135,42 @@ def builder(
 @app.command(help="Query the GraphRAG knowledge graph for natural language answers.")
 def query(
     query_text: str = typer.Argument(..., help="The user's query text to process."),
+    model: str = typer.Option("deepseek-chat", "--model", "-m", help="Model name."),
+    model_provider: str = typer.Option("deepseek", "--provider", "-p", help="Model provider."),
+    temperature: Optional[float] = typer.Option(None, "--temp", "-t", help="Sampling temperature."),
+    max_tokens: Optional[int] = typer.Option(None, "--max-tokens", help="Maximum number of output tokens."),
+    reasoning: Optional[bool] = typer.Option(None, "--reasoning", help="Controls the reasoning/thinking mode for supported models."),
+    url: Optional[str] = typer.Option(None, "--url", help="Neo4j database URL (e.g., bolt://localhost:7687)."),
+    username: Optional[str] = typer.Option(None, "--username", "-u", help="Neo4j username."),
+    password: Optional[str] = typer.Option(None, "--password", help="Neo4j password."),
     database: str = typer.Option("neo4j", "--database", "-d", help="Target database name (default: neo4j).")
 ) -> None:
     """
     Main CLI entry point for execute GraphRAG queries against the knowledge graph.
     """
     try:
-        response = _run_graphrag(query_text, database)
+        response = _run_graphrag(
+            query_text, 
+            model=model,
+            model_provider=model_provider,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            reasoning=reasoning,
+            url=url,
+            username=username,
+            password=password,
+            database=database
+        )
     except Exception as e:
         logger.error("Query command failed: %s", str(e))
+        return None
 
     console.print(Panel(
-        Markdown(response),
-        title="GraphRAG Answer", 
+        response["cypher_statement"],
+        title="Cypher", 
+    ))
+
+    console.print(Panel(
+        response["retrieved_chunks"],
+        title="Cypher", 
     ))

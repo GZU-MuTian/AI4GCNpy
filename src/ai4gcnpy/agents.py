@@ -1,10 +1,12 @@
-from .chains import ParagraphLabelerChain, ParseAuthorshipChain, ReportLabelerChain, PhysicalQuantityExtractorChain, ALLOWED_PARAGRAPH_LABELS
-from .chains import ParagraphLabelList, AuthorList, ReportLabel, PhysicalQuantityCategory
-from .utils import split_text_into_paragraphs, group_paragraphs_by_labels, header_regex_match
+from .chains import ParagraphLabelerChain, ParseAuthorshipChain, ReportLabelerChain, PhysicalQuantityExtractorChain, GuardrailsChain, Text2CypherChain, CorrectCypherChain, ALLOWED_PARAGRAPH_LABELS
+from .chains import ParagraphLabelList, AuthorList, ReportLabel, PhysicalQuantityCategory, GuardrailsOutput
+from .utils import split_text_into_paragraphs, group_paragraphs_by_labels, header_regex_match, extract_cypher
+from .db_client import GCNGraphDB
 
 from langgraph.graph import StateGraph, START, END
 
 from typing import List, Dict, Any, Optional
+from typing_extensions import TypedDict
 from pydantic import BaseModel, Field
 import logging
 
@@ -276,21 +278,217 @@ def GCNExtractorAgent():
 
 # --- State Definition ---
 
-# class RAGState(BaseModel):
-#     query: str = Field(..., description="")
-#     retrieved_chunks
-#     response: 
-#     extracted_dset: Dict[str, Any] = Field(default_factory=dict, description="Dict storing extracted circular information.")
-#     current_label: str = Field(default="end_loop", description="The label currently being processed.")
+class GraphQAState(TypedDict):
+    """
+    Represents the state of the Graph QA agent throughout the workflow.
 
+    Attributes:
+        query: The original natural language question from the user.
+        cypher_statement: The generated (or corrected) Cypher query.
+        cypher_error: Error message if Cypher validation or execution failed.
+        retrieved_chunks: List of result records from executing the Cypher query.
+        answer: The final natural language answer generated from the results.
+        next_action: Routing decision for the workflow engine.
+    """
+    query: str
+    graph: GCNGraphDB
+    database: str
+    cypher_statement: str
+    cypher_error: str
+    retry_count: int
+    retrieved_chunks: List[Dict[str, Any]]
+    answer: str
+    next_action: str
+
+class CypherValidationResult(BaseModel):
+    """
+    Model representing the outcome of Cypher statement validation.
+    
+    Attributes:
+        is_valid: Whether the Cypher statement passed validation.
+        error_message: Optional error message if validation failed.
+    """
+    is_valid: bool = Field(..., description="Indicates whether the Cypher statement is valid.")
+    error_message: Optional[str] = Field(None, description="Error details if validation failed.")
 
 # --- Node Functions ---
 
+def guardrails(state: GraphQAState) -> Dict[str, Any]:
+    """
+    Uses an LLM to decide if the question is related to NASA's GCN.
+    """
+    query = state.get("query")
+    graph = state.get("graph")
+    
+    try:
+        guardrails_chain = GuardrailsChain()
+        output: GuardrailsOutput = guardrails_chain.invoke({"question": query, "schema": graph.get_schema()})
+        decision = output.decision
+    except Exception as e:
+        # Fallback on error: be conservative and reject
+        logger.warning(f"Guardrails LLM call failed: {e}. Defaulting to 'end'.")
+        decision = "end"
 
+    if decision == "end":
+        answer = """
+            I specialize exclusively in NASA's General Coordinates Network (GCN). Your question appears unrelated to this domain, so I cannot assist.
+        """
+        return {
+            "answer": answer,
+            "next_action": "end",
+        }
+    else:
+        return {
+            "next_action": "generate_cypher"
+        }
+
+def generate_cypher(state: GraphQAState) -> Dict[str, Any]:
+    """
+    Converts query_text to a Cypher query using an LLM.
+
+    Args:
+        state: Current workflow state containing the user query.
+        
+    Returns:
+        Updated state with a (placeholder) Cypher statement.
+    """
+    query = state.get("query")
+    graph = state.get("graph")
+
+    try:
+        cypher_chain = Text2CypherChain()
+        cypher_statement = cypher_chain.invoke({"question": query, "schema": graph.get_schema()})
+        cypher_query = extract_cypher(cypher_statement)
+    except Exception as e:
+        logger.error(f"Failed to generate Cypher: {e}")
+
+    logger.debug(f"Generated Cypher: {cypher_query}")
+    return {
+        "cypher_statement": cypher_query,
+        "next_action": "execute_cypher",
+    }
+
+def execute_cypher(state: GraphQAState) -> Dict[str, Any]:
+    """
+    Executes the validated Cypher query against a graph database.
+        
+    Args:
+        state: Current state with a valid Cypher statement.
+        
+    Returns:
+        Updated state with retrieved result chunks.
+    """
+    cypher_statement = state.get("cypher_statement")
+    database = state.get("database")
+    graph = state.get("graph")
+
+    with graph.session(database) as session:
+        try:
+            results = session.run(cypher_statement)
+            retrieved_chunks = [result.data() for result in results]
+        except Exception as e:
+            return {
+                "cypher_error": e,
+                "next_action": "correct_cypher"
+            }
+    return {
+        "retrieved_chunks": retrieved_chunks,
+        "next_action": "generate_final_answer"
+    }
+
+def correct_cypher(state: GraphQAState) -> Dict[str, Any]:
+    """
+    Attempts to correct an invalid Cypher statement.
+
+    Args:
+        state: Current state with invalid Cypher.
+        
+    Returns:
+        Updated state with a corrected Cypher statement or failure signal.
+    """
+    graph = state.get("graph")
+    retry_count = state.get("retry_count", 0)
+
+    cypher_query = ""
+    try:
+        correct_cypher_chain = CorrectCypherChain()
+        corrected_cypher = correct_cypher_chain.invoke({
+            "question": state.get("query"), 
+            "schema": graph.get_schema(),
+            "cypher": state.get("cypher_statement"),
+            "errors": state.get("cypher_error")
+        })
+        cypher_query = extract_cypher(corrected_cypher)
+    except Exception as e:
+        logger.error(f"Failed to correct Cypher: {e}")
+
+    retry_count = state.get("retry_count")
+    if retry_count <= 2:
+        retry_count += 1
+        return {
+            "cypher_statement": cypher_query,
+            "next_action": "execute_cypher",
+            "retry_count": retry_count
+        }
+    else:
+        return {
+            "answer": "Failed to correct cypher",
+            "next_action": "end"
+        }
+
+def generate_final_answer(state: GraphQAState) -> Dict[str, Any]:
+    """
+    Generates a natural language answer from the retrieved graph data.
+        
+    Args:
+        state: Current state with retrieved data.
+        
+    Returns:
+        Final state with a natural language answer.
+    """
+    return {}
 
 
 # --- Graph Construction ---
 
-# def GraphRAG():
-#     pass
-#     workflow.add_node("generate_response", self._generate_response_node)
+def GraphQAAgent():
+
+    workflow = StateGraph(GraphQAState)
+
+    workflow.add_node("guardrails", guardrails)
+    workflow.add_node("generate_cypher", generate_cypher)
+    workflow.add_node("correct_cypher", correct_cypher)
+    workflow.add_node("execute_cypher", execute_cypher)
+    workflow.add_node("generate_final_answer", generate_final_answer)
+
+    
+    # Define the edges/flow between nodes
+    workflow.add_edge(START, "guardrails")
+    workflow.add_conditional_edges(
+        "guardrails",
+        lambda state: state["next_action"],
+        {
+            "generate_cypher": "generate_cypher",
+            "end": END,
+        },
+    )
+    workflow.add_edge("generate_cypher", "execute_cypher")
+    workflow.add_conditional_edges(
+        "execute_cypher",
+        lambda state: state["next_action"],
+        {
+            "correct_cypher": "correct_cypher",
+            "generate_final_answer": "generate_final_answer",
+        }
+    )
+    workflow.add_conditional_edges(
+        "correct_cypher",
+        lambda state: state["next_action"],
+        {
+            "execute_cypher": "execute_cypher",
+            "end": END,
+        }
+    )
+    workflow.add_edge("generate_final_answer", END)
+
+    return workflow.compile()

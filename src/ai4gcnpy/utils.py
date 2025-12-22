@@ -190,6 +190,8 @@ def build_cypher_statements(data: Dict[str, Any]) -> List[Tuple[LiteralString, D
         intent_node = """
         MATCH (c:CIRCULAR {circularId: $circularId})
         MERGE (intent:INTENT {name: $intentType})
+        ON CREATE SET
+            intent.ingestedBy = $ingestedBy
         CREATE (c)-[:HAS_INTENT {
             ingestedBy: $ingestedBy,
             ingestedAt: $ingestedAt
@@ -222,6 +224,8 @@ def build_cypher_statements(data: Dict[str, Any]) -> List[Tuple[LiteralString, D
         physical_quantity_node = """
             MATCH (c:CIRCULAR {circularId: $circularId})
             MERGE (pq:PHYSICAL_QUANTITY {name: $quantityName})
+            ON CREATE SET
+                pq.ingestedBy = $ingestedBy
             MERGE (c)-[:HAS_PHYSICAL_QUANTITY {
                 sentences: $sentences,
                 ingestedBy: $ingestedBy,
@@ -252,6 +256,8 @@ def build_cypher_statements(data: Dict[str, Any]) -> List[Tuple[LiteralString, D
         metadata_node = """
             MATCH (c:CIRCULAR {circularId: $circularId})
             MERGE (m:METADATA {type: $metadateType})
+            ON CREATE SET
+                m.ingestedBy = $ingestedBy
             MERGE (c)-[:HAS_METADATA {
                 sentences: $sentences,
                 ingestedBy: $ingestedBy,
@@ -268,3 +274,45 @@ def build_cypher_statements(data: Dict[str, Any]) -> List[Tuple[LiteralString, D
         statements.append((metadata_node, metadata_para))
 
     return statements
+
+
+def extract_cypher(text: str) -> str:
+    """Extract and format Cypher query from text, handling code blocks and special characters. See neo4j_graphrag.retrievers.text2cypher.
+
+    This function performs two main operations:
+    1. Extracts Cypher code from within triple backticks (```), if present
+    2. Automatically adds backtick quotes around multi-word identifiers:
+       - Node labels (e.g., ":Data Science" becomes ":`Data Science`")
+       - Property keys (e.g., "first name:" becomes "`first name`:")
+       - Relationship types (e.g., "[:WORKS WITH]" becomes "[:`WORKS WITH`]")
+
+    Args:
+        text (str): Raw text that may contain Cypher code, either within triple
+                   backticks or as plain text.
+
+    Returns:
+        str: Properly formatted Cypher query with correct backtick quoting.
+    """
+    # Extract Cypher code enclosed in triple backticks
+    pattern = r"```(.*?)```"
+    matches = re.findall(pattern, text, re.DOTALL)
+    cypher_query = matches[0] if matches else text
+    # Quote node labels in backticks if they contain spaces and are not already quoted
+    cypher_query = re.sub(
+        r":\s*(?!`\s*)(\s*)([a-zA-Z0-9_]+(?:\s+[a-zA-Z0-9_]+)+)(?!\s*`)(\s*)",
+        r":`\2`",
+        cypher_query,
+    )
+    # Quote property keys in backticks if they contain spaces and are not already quoted
+    cypher_query = re.sub(
+        r"([,{]\s*)(?!`)([a-zA-Z0-9_]+(?:\s+[a-zA-Z0-9_]+)+)(?!`)(\s*:)",
+        r"\1`\2`\3",
+        cypher_query,
+    )
+    # Quote relationship types in backticks if they contain spaces and are not already quoted
+    cypher_query = re.sub(
+        r"(\[\s*[a-zA-Z0-9_]*\s*:\s*)(?!`)([a-zA-Z0-9_]+(?:\s+[a-zA-Z0-9_]+)+)(?!`)(\s*(?:\]|-))",
+        r"\1`\2`\3",
+        cypher_query,
+    )
+    return cypher_query
