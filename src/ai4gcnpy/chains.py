@@ -299,12 +299,25 @@ Task: Generate a Cypher statement for querying a Neo4j graph database from a use
 Use only the provided relationship types and properties in the schema:
 {schema}
 
-Note: 
-Do not include any explanations or apologies in your responses.
-Do not use any properties or relationships not included in the schema.
-Do not respond to any questions that might ask anything else than for you to construct a Cypher statement.
-Do not include any text except the generated Cypher statement.
-Do not include triple backticks ``` or any additional text except the generated Cypher statement in your response.
+Key Facts:
+- All factual content from a Circular has been categorized into `HAS_PHYSICAL_QUANTITY` or `HAS_METADATA` relationships. Do NOT read `CIRCULAR.rawText` — all relevant information is already organized into the above relationships.
+- The `sentences` property on these relationships contains the **exact original sentence(s)** from the Circular that support the category.
+- To answer a question, identify the most relevant semantic category (e.g., "observation_conditions_and_instrument" for instrument questions), then retrieve `r.sentences`.
+- If the question references a specific circular (e.g., "GCN 12345"), match by `circularId`.
+- If the question is about a specific GRB or astrophysical event (e.g., "GRB 221009A"), locate relevant CIRCULAR nodes by checking if the event name appears in the `subject` property.
+  - Use case-insensitive substring matching: `toLower(c.subject) CONTAINS toLower($eventName)`
+  - Avoid full-text scan of `rawText`; `subject` is sufficient for event identification.
+
+Guidelines:
+- Question: "What instruments were used?" → use category = 'observation_conditions_and_instrument'
+- Question: "What is the position?" → use 'position_and_coordinates'
+- Question: "Who to contact?" → use METADATA with type = 'contactInformation'
+- Once the relevant CIRCULAR(s) are found, query their `HAS_INTENT` `HAS_PHYSICAL_QUANTITY` or `HAS_METADATA` relationships to retrieve answers. Return circularId, subject, createdOn, intent, relationship type, unified category, and sentences.
+
+Rules:
+- Do not include explanations, comments, markdown, backticks, or any text beyond the Cypher statement.
+- NEVER return entire nodes unless the question explicitly asks for a full description.
+- When querying multiple CIRCULAR nodes, always sort results by `c.createdOn` in descending order (newest first)  unless the question implies otherwise.
 """
 
 CYPHER_PROMPT = ChatPromptTemplate.from_messages([
@@ -396,3 +409,28 @@ CORRECT_CYPHER_PROMPT = ChatPromptTemplate.from_messages([
 def CorrectCypherChain():
     llm = llm_client.getLLM()
     return CORRECT_CYPHER_PROMPT | llm | StrOutputParser()
+
+# --- GenerateFinalChain ---
+
+_SYSTEM_GENERATE_FINAL_PROMPT = """
+You are a helpful assistant specialized in NASA's General Coordinates Network (GCN).
+
+Answer the user's question based ONLY on the provided context. If the context is empty or irrelevant, say you cannot answer.
+"""
+
+_HUMAN_GENERATE_FINAL_PROMPT = """
+Question: 
+{question}
+
+Results: 
+{results}
+"""
+
+GENERATE_FINAL_PROMPT = ChatPromptTemplate.from_messages([
+    ("system", _SYSTEM_GENERATE_FINAL_PROMPT),
+    ("human", _HUMAN_GENERATE_FINAL_PROMPT)
+])
+
+def GenerateFinalChain(): 
+    llm = llm_client.getLLM()
+    return GENERATE_FINAL_PROMPT | llm | StrOutputParser()

@@ -255,7 +255,7 @@ def build_cypher_statements(data: Dict[str, Any]) -> List[Tuple[LiteralString, D
             continue
         metadata_node = """
             MATCH (c:CIRCULAR {circularId: $circularId})
-            MERGE (m:METADATA {type: $metadateType})
+            MERGE (m:METADATA {name: $metadateType})
             ON CREATE SET
                 m.ingestedBy = $ingestedBy
             MERGE (c)-[:HAS_METADATA {

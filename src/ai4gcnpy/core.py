@@ -113,7 +113,7 @@ def _run_graphrag(
     username: Optional[str] = None,
     password: Optional[str] = None,
     database: Optional[str] = None,    
-) -> Dict[str, Any]:
+):
     """
     Process a user query against the knowledge graph database.
     
@@ -140,18 +140,26 @@ def _run_graphrag(
         llm_config["reasoning"] = reasoning
     llm_client.basicConfig(**llm_config)
 
-    graph = GCNGraphDB(url=url, username=username, password=password)
-
     try:
+        graph = GCNGraphDB(url=url, username=username, password=password)
+
         # Compile into a runnable app
         app = GraphQAAgent()
+        # Run the workflow
+        initial_state = GraphQAState(
+            query=query_text, 
+            graph=graph, 
+            database=database
+        )
 
-        # # Run the workflow
-        initial_state = GraphQAState(query=query_text, graph=graph, database=database)
-        final_state: dict = app.invoke(initial_state)
+        final_state = app.invoke(initial_state)
+
+        graph.close()
+
+        return final_state
     except Exception as e:
         logger.error(f"GCNExtractorAgent execution failed: {e}")
         return {}
 
-    graph.close()
-    return final_state
+    
+    

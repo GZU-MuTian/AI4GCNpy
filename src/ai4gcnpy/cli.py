@@ -6,6 +6,8 @@ from rich.console import Console
 from rich.logging import RichHandler
 from rich.panel import Panel
 from rich.json import JSON
+from rich.rule import Rule
+from rich.syntax import Syntax
 from rich.markdown import Markdown
 from rich.progress import track
 from pathlib import Path
@@ -161,16 +163,33 @@ def query(
             password=password,
             database=database
         )
+
+        # --- 1. User Query ---
+        console.print("[bold blue]User Query:[/bold blue]")
+        console.print(response.get("query"), style="italic")
+
+        # --- 2. Generated Cypher ---
+        cypher = response.get("cypher_statement")
+        if cypher:
+            console.print(Syntax(cypher, "cypher", theme="monokai", word_wrap=True))
+
+        # --- 3. Final Answer (Markdown) ---
+        answer = response.get("answer")
+        if answer:
+            console.print(Rule("[bold]Final Answer"))
+            console.print(Markdown(answer))
+
+        # --- 4. Evidence / Retrieved Chunks (Data Sources) ---
+        retrieved_chunks = response.get("retrieved_chunks")
+        if retrieved_chunks is not None:
+            evidence_md_lines = []
+            for i, rec in enumerate(retrieved_chunks, 1):
+                rec_str = "\n".join(f"  - **{k}**: `{v}`" for k, v in rec.items())
+                evidence_md_lines.append(f"> **Record {i}:**\n{rec_str}")
+            evidence_md = "\n\n".join(evidence_md_lines)
+            console.print(Markdown(evidence_md))
+
     except Exception as e:
         logger.error("Query command failed: %s", str(e))
         return None
 
-    console.print(Panel(
-        response["cypher_statement"],
-        title="Cypher", 
-    ))
-
-    console.print(Panel(
-        response["retrieved_chunks"],
-        title="Cypher", 
-    ))
