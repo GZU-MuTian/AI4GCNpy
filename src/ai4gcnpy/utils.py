@@ -2,6 +2,11 @@ import re
 from typing import List, Dict, Tuple, Any, Optional, LiteralString
 import logging
 from datetime import date
+import tempfile
+import tarfile
+from pathlib import Path
+import urllib.request
+
 
 logger = logging.getLogger(__name__)
 
@@ -316,3 +321,45 @@ def extract_cypher(text: str) -> str:
         cypher_query,
     )
     return cypher_query
+
+def progress_bar(block_num, block_size, total_size):
+    if total_size > 0:
+        downloaded = block_num * block_size
+        percent = downloaded * 100 / total_size
+        
+        # 创建进度条
+        bar_length = 30
+        filled_length = int(bar_length * percent / 100)
+        bar = '█' * filled_length + '░' * (bar_length - filled_length)
+        
+        print(f'\r[{bar}] {percent:.1f}%', end='', flush=True)
+
+def download_gcn_archive(url: str) -> str:
+    """
+    Download a .tar.gz archive containing GCN Circular TXT files from the given URL, save it to a temporary directory, extract its contents, and return the path to the extracted directory.
+
+    Args:
+        url (str): The URL pointing to a .tar.gz file containing GCN .txt files.
+
+    Returns:
+        str: The path to the directory where the archive was extracted.
+    """
+    # Create a temporary directory that persists until caller cleans up or program exits
+    temp_dir = Path(tempfile.mkdtemp(prefix="gcn_extractor_"))
+    archive_path = temp_dir / "archive.txt.tar.gz"
+    
+    logger.debug(f"Downloading GCN archive from: {url}")
+    try:
+        urllib.request.urlretrieve(url, archive_path, reporthook=progress_bar)
+    except:
+        raise RuntimeError(f"Failed to download archive from {url}.")
+
+    logger.info(f"Extracting .tar.gz archive to: {temp_dir}")
+    try:
+        with tarfile.open(archive_path, "r:gz") as tar:
+            tar.extractall(temp_dir, filter='data')
+    except:
+        raise RuntimeError(f"Failed to extract .tar.gz archive")
+    
+    extracted_dir = temp_dir / "archive.txt"
+    return str(extracted_dir.resolve())
