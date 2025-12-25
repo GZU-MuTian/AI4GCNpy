@@ -156,17 +156,18 @@ ai4gcnpy/
 
 ## Related Resources
 
-NASA GCN Archive: https://gcn.nasa.gov/circulars/
-Neo4j Documentation: https://neo4j.com/docs/
-Neo4j Linux installation: https://neo4j.com/docs/operations-manual/current/installation/linux/debian/
-LangGraph Guide: https://docs.langchain.com/
+- NASA GCN Archive: https://gcn.nasa.gov/circulars/
+- Neo4j Documentation: https://neo4j.com/docs/
+- Neo4j Linux installation: https://neo4j.com/docs/operations-manual/current/installation/linux/debian/
+- LangGraph Guide: https://docs.langchain.com/
 
 ## Contact
 
 For questions and support:
-Author: Yu Liu
-Email: yuliu@gzu.edu.cn
-Repository: https://github.com/GZU-MuTian/AI4GCNpy
+
+- Author: Yu Liu
+- Email: yuliu@gzu.edu.cn
+- Repository: https://github.com/GZU-MuTian/AI4GCNpy
 
 Astronomical Discovery, Powered by AI! 🔭✨
 
