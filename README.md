@@ -1,5 +1,6 @@
 # AI4GCNpy: A Graph Database Toolkit for NASA's GCN
 
+[![PyPI version](https://badge.fury.io/py/ai4gcnpy.svg)](https://pypi.org/project/ai4gcnpy/)
 [![Python Version](https://img.shields.io/badge/python-3.12%2B-blue)](https://www.python.org/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
