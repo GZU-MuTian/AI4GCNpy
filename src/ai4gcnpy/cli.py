@@ -102,12 +102,16 @@ def extractor(
 
 @app.command(help="Batch extract from one or more GCN Circular TXT files. If no input is given, downloads data automatically.")
 def batch_extractor(
-        input_path: Optional[str] = typer.Argument(
+        input_path: Optional[str] = typer.Option(
             None,
+            "--input",
+            "-i",
             help="Path to a TXT file or a directory containing TXT files. If omitted, data will be downloaded and processed."
         ),
-        output_path: Optional[str] = typer.Argument(
+        output_path: Optional[str] = typer.Option(
             None,
+            "--output",
+            "-o",
             help="Directory to save extraction results as JSON files. Defaults to GCN_OUTPUT_PATH env var or './output'."
         ),
         model: str = typer.Option("deepseek-chat", "--model", "-m", help="Model name."),
@@ -178,6 +182,9 @@ def batch_extractor(
 @app.command(help="Build a GCN knowledge graph from structured extraction results.")
 def builder(
     input_path: str = typer.Argument(..., help="Path to a JSON file or a directory containing JSON files."),
+    url: Optional[str] = typer.Option(None, "--url", help="Neo4j database URL (e.g., bolt://localhost:7687)."),
+    username: Optional[str] = typer.Option(None, "--username", "-u", help="Neo4j username."),
+    password: Optional[str] = typer.Option(None, "--password", help="Neo4j password."),
     database: str = typer.Option("neo4j", "--database", "-d", help="Neo4j database name."),
 ) -> None:
     """
@@ -203,7 +210,7 @@ def builder(
 
     files_processed = 0
     for json_file in track(json_files, description="Processing files...", transient=True):
-        if _run_builder(json_file=json_file.as_posix(), database=database):
+        if _run_builder(json_file=json_file.as_posix(), url=url, username=username, password=password, database=database):
             files_processed += 1
         else:
             logger.warning(f"Skipped or failed processing: {json_file}")

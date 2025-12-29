@@ -70,6 +70,10 @@ def _run_extraction(
 
 def _run_builder(
     json_file: str,
+    url: Optional[str] = None,
+    username: Optional[str] = None,
+    password: Optional[str] = None,
+    driver_config: Dict[str, Any] = {},
     database: Optional[str] = None,
 ) -> bool:
     """
@@ -90,7 +94,7 @@ def _run_builder(
         logger.debug(f"Empty payload in file: {json_file}, skipping.")
         return False
 
-    graph = GCNGraphDB()
+    graph = GCNGraphDB(url=url, username=username, password=password, driver_config=driver_config)
     with graph.transaction(database) as tx:
         try:
             cypher_statements = build_cypher_statements(payload)
