@@ -124,7 +124,7 @@ Basic Commands:
 gcn-cli extractor path/to/gcn_circular.txt
 
 # Batch extract from multiple files
-gcn-cli batch_extractor --input path/to/circulars_directory/ --output path/to/extracted_data_directory/
+gcn-cli batch-extractor --input path/to/circulars_directory/ --output path/to/extracted_data_directory/
 
 # Build graph
 gcn-cli builder path/to/extracted_data_directory/
