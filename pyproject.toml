@@ -1,6 +1,6 @@
 [project]
 name = "ai4gcnpy"
-version = "0.1.1"
+version = "0.1.2"
 license = { text = "MIT" }
 description = "A Graph Database Toolkit for NASA's GCN"
 readme = "README.md"
